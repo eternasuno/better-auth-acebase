@@ -1,0 +1,32 @@
+{
+  "name": "better-auth-acebase",
+  "version": "0.1.0",
+  "description": "AceBase adapter for better-auth",
+  "type": "module",
+  "exports": {
+    ".": "./src/adapter.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eternasuno/better-auth-acebase.git"
+  },
+  "peerDependencies": {
+    "acebase": "^1.29.13",
+    "better-auth": "^1.6.23"
+  },
+  "devDependencies": {
+    "@better-auth/test-utils": "^1.6.23",
+    "@biomejs/biome": "^2.5.8",
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "scripts": {
+    "check": "tsc --noEmit && biome check --write",
+    "test": "vitest run"
+  }
+}
