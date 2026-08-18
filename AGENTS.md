@@ -4,6 +4,10 @@
 
 AceBase adapter for better-auth. Single small TS library, no monorepo, no framework.
 
+## Git workflow
+
+`main` is branch-protected: direct pushes (including admins) are rejected — all changes go through a PR (`git push` a feature branch, then `gh pr create`). Tags are unaffected and drive the npm publish workflow.
+
 ## Build step
 
 The package compiles to `dist/` via `pnpm build` (`tsc -p tsconfig.build.json`). Development config is the plain `tsconfig.json` (covers `src/` + `test/`, `noEmit` — this is what VSCode's TS server picks up, one project for all files); `tsconfig.build.json` extends it with emit settings (`rootDir: "src"`, `outDir: "dist"`, declarations) and includes only `src/`, so output lands directly in `dist/` (no `dist/src/`, no test artifacts). Key detail: source uses `.ts` extension on relative imports (`./query.ts`), and `rewriteRelativeImportExtensions` rewrites them to `.js` in the output — required for Node ESM to resolve. `tsconfig.json` sets `allowImportingTsExtensions` for this.
