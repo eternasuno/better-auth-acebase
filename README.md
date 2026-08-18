@@ -44,9 +44,11 @@ pnpm check  # tsc --noEmit + biome check
 ## Publish
 
 Tag a release with `v*` and the GitHub Actions workflow
-`.github/workflows/publish.yml` builds the package and publishes it to npm.
-The workflow needs an `NPM_TOKEN` secret (an npm access token with publish
-permission).
+`.github/workflows/publish.yml` builds the package and publishes it to npm via
+[Trusted Publishing](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/configuring-openid-connect-in-cloud-providers)
+(OIDC, no token secret needed). Configure the trusted publisher once on
+npmjs.com for this package pointing at this repository and the `publish.yml`
+workflow.
 
 ## License
 

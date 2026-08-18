@@ -8,7 +8,7 @@ AceBase adapter for better-auth. Single small TS library, no monorepo, no framew
 
 The package compiles to `dist/` via `pnpm build` (`tsc -p tsconfig.build.json`). Development config is the plain `tsconfig.json` (covers `src/` + `test/`, `noEmit` — this is what VSCode's TS server picks up, one project for all files); `tsconfig.build.json` extends it with emit settings (`rootDir: "src"`, `outDir: "dist"`, declarations) and includes only `src/`, so output lands directly in `dist/` (no `dist/src/`, no test artifacts). Key detail: source uses `.ts` extension on relative imports (`./query.ts`), and `rewriteRelativeImportExtensions` rewrites them to `.js` in the output — required for Node ESM to resolve. `tsconfig.json` sets `allowImportingTsExtensions` for this.
 
-Published artifacts: `exports`/`types`/`files` all point at `dist/` (`./dist/adapter.js` + `.d.ts`). Tests run against raw TS via vitest, so `pnpm test`/`pnpm check` never touch `dist` — run `pnpm build` to verify emit. Publishing happens through `.github/workflows/publish.yml` (tag `v*` → build + test + publish to npm; needs an `NPM_TOKEN` secret).
+Published artifacts: `exports`/`types`/`files` all point at `dist/` (`./dist/adapter.js` + `.d.ts`). Tests run against raw TS via vitest, so `pnpm test`/`pnpm check` never touch `dist` — run `pnpm build` to verify emit. Publishing happens through `.github/workflows/publish.yml` (tag `v*` → build + test + publish to npm via Trusted Publishing / OIDC, `id-token: write` permission; no token secret).
 
 ## Commands
 
