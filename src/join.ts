@@ -1,7 +1,7 @@
 import type { AceBase, DataSnapshotsArray } from 'acebase';
 import type { JoinConfig } from 'better-auth';
 import type { AdapterFactoryCustomizeAdapterCreator } from 'better-auth/adapters';
-import { decodeMarkerToNull, type Value } from './utils';
+import type { Value } from './utils.ts';
 
 export type CreatorConfig = Parameters<AdapterFactoryCustomizeAdapterCreator>[0];
 
@@ -45,8 +45,8 @@ const merge =
       const valueArr = joinMap.get(v[config.on.from] as string) ?? [];
 
       return config.relation === 'one-to-one' && valueArr.length > 0
-        ? { ...v, [model]: decodeMarkerToNull(valueArr[0]) }
-        : { ...v, [model]: valueArr.map(decodeMarkerToNull) };
+        ? { ...v, [model]: valueArr[0] }
+        : { ...v, [model]: valueArr };
     });
   };
 

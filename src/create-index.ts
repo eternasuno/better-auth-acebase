@@ -1,6 +1,6 @@
 import type { AceBase } from 'acebase';
 import type { BetterAuthDBSchema } from 'better-auth';
-import type { CreatorConfig } from './join';
+import type { CreatorConfig } from './join.ts';
 
 const fieldIterator = function* (schema: BetterAuthDBSchema) {
   for (const [modelKey, modelSchema] of Object.entries(schema)) {
@@ -20,11 +20,6 @@ export const createIndexesFromSchema =
     Promise.all(
       fieldIterator(schema).map(async ([modelName, modelKey, fieldKey]) => {
         const fieldName = getFieldName({ field: fieldKey, model: modelKey });
-
-        try {
-          await db.indexes.create(modelName, fieldName);
-        } catch (e) {
-          console.warn(`Failed to create index for %s.%s`, modelName, fieldName, e);
-        }
+        await db.indexes.create(modelName, fieldName);
       })
     );

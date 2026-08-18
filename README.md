@@ -1,4 +1,4 @@
-# better-auth-acebase
+# @eternasuno/better-auth-acebase
 
 AceBase adapter for [better-auth](https://www.better-auth.com). This package lets
 you use AceBase as the database for your better-auth instance.
@@ -6,14 +6,14 @@ you use AceBase as the database for your better-auth instance.
 ## Install
 
 ```bash
-pnpm add better-auth-acebase acebase
+pnpm add @eternasuno/better-auth-acebase acebase
 ```
 
 ## Usage
 
 ```ts
 import { AceBase } from 'acebase';
-import { acebaseAdapter } from 'better-auth-acebase';
+import { acebaseAdapter } from '@eternasuno/better-auth-acebase';
 
 const db = new AceBase('app', { storage: { path: './data' } });
 await db.ready();
@@ -36,9 +36,17 @@ export const auth = betterAuth({
 
 ```bash
 pnpm install
+pnpm build  # tsc -> dist/ (compiled ESM + types)
 pnpm test   # runs better-auth adapter test suite
 pnpm check  # tsc --noEmit + biome check
 ```
+
+## Publish
+
+Tag a release with `v*` and the GitHub Actions workflow
+`.github/workflows/publish.yml` builds the package and publishes it to npm.
+The workflow needs an `NPM_TOKEN` secret (an npm access token with publish
+permission).
 
 ## License
 

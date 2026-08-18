@@ -1,18 +1,28 @@
 {
-  "name": "better-auth-acebase",
+  "name": "@eternasuno/better-auth-acebase",
   "version": "0.1.0",
   "description": "AceBase adapter for better-auth",
+  "packageManager": "pnpm@11.22.0",
   "type": "module",
+  "main": "./dist/adapter.js",
+  "types": "./dist/adapter.d.ts",
   "exports": {
-    ".": "./src/adapter.ts"
+    ".": {
+      "types": "./dist/adapter.d.ts",
+      "import": "./dist/adapter.js",
+      "default": "./dist/adapter.js"
+    }
   },
   "files": [
-    "src"
+    "dist"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eternasuno/better-auth-acebase.git"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "peerDependencies": {
     "acebase": "^1.29.13",
@@ -26,7 +36,9 @@
     "vitest": "^4.1.10"
   },
   "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check": "tsc --noEmit && biome check --write",
+    "prepublishOnly": "pnpm build",
     "test": "vitest run"
   }
 }

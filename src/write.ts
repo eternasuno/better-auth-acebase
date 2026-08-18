@@ -1,25 +1,24 @@
-/** biome-ignore-all lint/suspicious/noExplicitAny: ignore */
 import type { AceBase } from 'acebase';
 import type { BetterAuthDBSchema } from 'better-auth';
 import type { CleanedWhere } from 'better-auth/adapters';
-import { createIndexesFromSchema } from './create-index';
-import type { CreatorConfig } from './join';
-import { findOne } from './query';
-import { decodeMarkerToNull, encodeNullToMarker } from './utils';
-import { buildQuery } from './where';
+import { createIndexesFromSchema } from './create-index.ts';
+import type { CreatorConfig } from './join.ts';
+import { findOne } from './query.ts';
+import type { Value } from './utils.ts';
+import { buildQuery } from './where.ts';
 
-type CreateParams = {
+type CreateParams<T extends Value = Value> = {
   model: string;
-  data: any;
+  data: T;
 };
 
 export const create =
   (db: AceBase) =>
-  async ({ model, data }: CreateParams) => {
+  async <T extends Value>({ model, data }: CreateParams<T>): Promise<T> => {
     const id = data.id ?? crypto.randomUUID();
-    await db.ref(`${model}/${id}`).set(encodeNullToMarker({ ...data, id }));
+    await db.ref(`${model}/${id}`).set({ ...data, id });
 
-    return { ...data, id };
+    return { ...data, id } as T;
   };
 
 type RemoveParams = {
@@ -49,20 +48,20 @@ export const removeMany =
 type UpdateParams = {
   model: string;
   where: Array<CleanedWhere>;
-  update: any;
+  update: unknown;
 };
 
 export const update =
   (db: AceBase) =>
   (creatorConfig: CreatorConfig) =>
-  async ({ model, where, update }: UpdateParams) => {
+  async <T>({ model, where, update }: UpdateParams): Promise<T | null> => {
     const result = await findOne(db)(creatorConfig)({ model, where });
 
     if (result?.id) {
-      const ref = await db.ref(`${model}/${result.id}`).update(encodeNullToMarker(update));
+      const ref = await db.ref(`${model}/${result.id}`).update(update as Record<string, unknown>);
       const updated = await ref.get();
 
-      return decodeMarkerToNull(updated.val()) as any;
+      return updated.val() as T | null;
     }
 
     return null;
@@ -70,11 +69,11 @@ export const update =
 
 export const updateMany =
   (db: AceBase) =>
-  async ({ model, where, update }: UpdateParams) => {
+  async ({ model, where, update }: UpdateParams): Promise<number> => {
     const queries = buildQuery(db)(model)(where);
     const refs = await Promise.all(queries.map((q) => q.find()));
     const updated = await Promise.all(
-      refs.flat().map((r) => r.update(encodeNullToMarker(update)))
+      refs.flat().map((r) => r.update(update as Record<string, unknown>))
     );
 
     return updated.length;

@@ -1,6 +1,5 @@
 import type { AceBase } from 'acebase';
 import type { CleanedWhere, WhereOperator } from 'better-auth/adapters';
-import { toNullMarker } from './utils';
 
 type DataReferenceQuery = ReturnType<AceBase['query']>;
 
@@ -79,7 +78,7 @@ const FILTERS_TABLE: Record<WhereOperator, WhereOp> = {
 const toFilterParams = (where: CleanedWhere) => {
   const op = FILTERS_TABLE[where.operator];
   const handler = typeof op === 'function' ? op : op[where.mode];
-  return handler({ ...where, value: toNullMarker(where.value) });
+  return handler(where);
 };
 
 const splitByOrClause = (where: ReadonlyArray<CleanedWhere>) => {
@@ -106,12 +105,14 @@ const toFilterParamsGroups = (
 ): ReadonlyArray<ReadonlyArray<FilterParams>> =>
   splitByOrClause(where).map((g) => g.map(toFilterParams));
 
+const TAKE_ALL = Number.MAX_SAFE_INTEGER; // AceBase filterless queries default to take=100; take the full set explicitly
+
 export const buildQuery =
   (db: AceBase) =>
   (model: string) =>
   (where?: ReadonlyArray<CleanedWhere>): ReadonlyArray<DataReferenceQuery> =>
     where?.length
       ? toFilterParamsGroups(where).map((g) =>
-          g.reduce((q, p) => q.filter(...p), db.query(model).take(Number.MAX_SAFE_INTEGER))
+          g.reduce((q, p) => q.filter(...p), db.query(model).take(TAKE_ALL))
         )
-      : [db.query(model).take(Number.MAX_SAFE_INTEGER)];
+      : [db.query(model).take(TAKE_ALL)];

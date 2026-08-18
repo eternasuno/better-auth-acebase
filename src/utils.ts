@@ -1,4 +1,4 @@
-import type { CreatorConfig } from './join';
+import type { CreatorConfig } from './join.ts';
 
 export type Value = Record<string, unknown>;
 
@@ -8,23 +8,15 @@ export const toNullMarker = <T>(value: T) => (value === null ? NULL_MARKER : val
 
 export const fromNullMarker = <T>(value: T) => (value === NULL_MARKER ? null : value);
 
-export const encodeNullToMarker = <T extends Value>(data: T) =>
-  Object.fromEntries(Object.entries(data).map(([key, value]) => [key, toNullMarker(value)])) as T;
-
-export const decodeMarkerToNull = <T extends Value>(data: T) =>
-  Object.fromEntries(
-    Object.entries(data).map(([key, value]) => [key, fromNullMarker(value)])
-  ) as T;
-
 type SliceParams = {
   offset?: number;
   limit?: number;
 };
 
 export const applySlice =
-  ({ offset = 0, limit = 100 }: SliceParams) =>
+  ({ offset = 0, limit }: SliceParams) =>
   <T extends Value>(values: Array<T>) =>
-    values.slice(offset, offset + limit);
+    limit === undefined ? values.slice(offset) : values.slice(offset, offset + limit);
 
 type SelectParams = {
   select?: ReadonlyArray<string>;
