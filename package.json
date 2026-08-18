@@ -1,6 +1,6 @@
 {
   "name": "@eternasuno/better-auth-acebase",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AceBase adapter for better-auth",
   "packageManager": "pnpm@11.22.0",
   "type": "module",
