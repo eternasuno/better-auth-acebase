@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    versioning-strategy: 'increase'
+    groups:
+      better-auth:
+        patterns:
+          - 'better-auth'
+          - '@better-auth/*'
+      acebase:
+        patterns:
+          - 'acebase'
+          - 'acebase-core'
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
