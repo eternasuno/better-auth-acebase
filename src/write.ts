@@ -54,17 +54,29 @@ const findDistinctRefs = async (
   });
 };
 
-const fulfilledCount = (
-  results: ReadonlyArray<PromiseSettledResult<unknown>>
-) => results.filter((result) => result.status === 'fulfilled').length;
+// Bulk writes keep better-auth's numeric fulfilled-count contract, but silently
+// dropping rejections would hide partial failures: any rejection surfaces as an
+// AggregateError carrying every cause, after all operations have settled.
+export const settleBulkOperations = async (
+  operations: ReadonlyArray<Promise<unknown>>
+): Promise<number> => {
+  const results = await Promise.allSettled(operations);
+  const causes = results.flatMap((result) =>
+    result.status === 'rejected' ? [result.reason] : []
+  );
+  if (causes.length > 0) {
+    throw new AggregateError(causes, 'Some bulk operations failed');
+  }
+
+  return results.length;
+};
 
 export const removeMany =
   (db: AceBase) =>
   async ({ model, where }: RemoveParams) => {
     const refs = await findDistinctRefs(buildQuery(db)(model)(where));
-    const results = await Promise.allSettled(refs.map((ref) => ref.remove()));
 
-    return fulfilledCount(results);
+    return settleBulkOperations(refs.map((ref) => ref.remove()));
   };
 
 type UpdateParams = {
@@ -95,11 +107,10 @@ export const updateMany =
   (db: AceBase) =>
   async ({ model, where, update }: UpdateParams): Promise<number> => {
     const refs = await findDistinctRefs(buildQuery(db)(model)(where));
-    const results = await Promise.allSettled(
+
+    return settleBulkOperations(
       refs.map((ref) => ref.update(update as Record<string, unknown>))
     );
-
-    return fulfilledCount(results);
   };
 
 type CreateSchemaParams = {

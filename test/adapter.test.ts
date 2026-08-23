@@ -4,11 +4,13 @@ import { join } from 'node:path';
 import {
   authFlowTestSuite,
   caseInsensitiveTestSuite,
+  createTestSuite,
   normalTestSuite,
   testAdapter,
 } from '@better-auth/test-utils/adapter';
 import { AceBase } from 'acebase';
 import type { BetterAuthOptions } from 'better-auth';
+import type { CleanedWhere } from 'better-auth/adapters';
 import { afterAll, describe, expect, it } from 'vitest';
 import { acebaseAdapter } from '../src/adapter';
 import { joinExplicitLimitTestSuite } from './join-limit';
@@ -16,12 +18,100 @@ import {
   nestedNullValuesRoundTripTestSuite,
   sentinelAmbiguityTestSuite,
 } from './null-marker';
+import { extendedUserModelOptions } from './options';
 import {
   caseSensitivePatternOperatorsTestSuite,
+  findManyLimitZeroTestSuite,
   overlappingOrGroupsDeduplicationTestSuite,
   patternInsensitiveAndWildcardTestSuite,
   unfilteredCountTestSuite,
 } from './query-regressions';
+
+const PARITY_NAMES = [
+  'SortMissingOne',
+  'SortMissingTwo',
+  'SortNumber',
+  'SortStringOne',
+  'SortStringTwo',
+] as const;
+const parityWhere = (multi: boolean): CleanedWhere[] => {
+  const names = multi ? [...PARITY_NAMES].reverse() : PARITY_NAMES;
+
+  return names
+    .map<CleanedWhere>((value, index) => ({
+      field: 'name',
+      operator: multi ? 'eq' : 'in',
+      value: multi ? value : [...PARITY_NAMES],
+      connector: multi && index > 0 ? 'OR' : 'AND',
+      mode: 'sensitive',
+    }))
+    .slice(0, multi ? PARITY_NAMES.length : 1);
+};
+
+type ParityHelpers = Parameters<Parameters<typeof createTestSuite>[2]>[0];
+const seedParityRows = ({ adapter, generate }: ParityHelpers) =>
+  Promise.all(
+    PARITY_NAMES.map(async (name, index) =>
+      adapter.create({
+        model: 'user',
+        data: {
+          ...(await generate('user')),
+          id: `parity-${index}`,
+          name,
+          profile:
+            index < 2
+              ? undefined
+              : {
+                  rank: index === 2 ? 2 : '2',
+                  list: [index === 2 ? 2 : '2'],
+                },
+        },
+        forceAllowId: true,
+      })
+    )
+  );
+const parityTests = (helpers: ParityHelpers) => ({
+  'matches native sorting and in-memory sorting across windows': async () => {
+    await seedParityRows(helpers);
+    const find = (
+      field: string,
+      direction: 'asc' | 'desc',
+      multi: boolean,
+      window?: { offset: number; limit: number }
+    ) =>
+      helpers.adapter.findMany<{ name: string } & Record<string, unknown>>({
+        model: 'user',
+        sortBy: { field, direction },
+        where: parityWhere(multi),
+        ...window,
+      });
+
+    for (const field of [
+      'profile/rank',
+      'profile/list[0]',
+      'profile/missing',
+    ]) {
+      for (const direction of ['asc', 'desc'] as const) {
+        const native = await find(field, direction, false);
+        const merged = await find(field, direction, true);
+        expect(merged).toEqual(native);
+        expect(
+          await find(field, direction, true, { offset: 1, limit: 1 })
+        ).toEqual(native.slice(1, 2));
+        expect(
+          (native as Array<Record<string, unknown>>).every(
+            (row) => !('path' in row) && !('value' in row)
+          )
+        ).toBe(true);
+      }
+    }
+  },
+});
+const orMergeOrderParityTestSuite = createTestSuite(
+  'AceBase multi-group merge matches native ordering',
+  { defaultBetterAuthOptions: extendedUserModelOptions },
+  parityTests
+);
 
 describe('AceBase Adapter', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'test-acebase-'));
@@ -53,6 +143,8 @@ describe('AceBase Adapter', async () => {
       caseSensitivePatternOperatorsTestSuite(),
       patternInsensitiveAndWildcardTestSuite(),
       overlappingOrGroupsDeduplicationTestSuite(),
+      findManyLimitZeroTestSuite(),
+      orMergeOrderParityTestSuite(),
       nestedNullValuesRoundTripTestSuite(),
       joinExplicitLimitTestSuite(),
       sentinelAmbiguityTestSuite(),

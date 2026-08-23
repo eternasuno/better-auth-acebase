@@ -94,7 +94,7 @@ type SliceParams = {
 
 export const applySlice =
   ({ offset = 0, limit }: SliceParams) =>
-  <T extends Value>(values: Array<T>) =>
+  <T>(values: Array<T>): Array<T> =>
     limit === undefined
       ? values.slice(offset)
       : values.slice(offset, offset + limit);
@@ -135,92 +135,112 @@ export type SortBy = {
   direction: 'asc' | 'desc';
 };
 
-const isMissingValue = (value: unknown): boolean =>
-  value === undefined || (typeof value === 'number' && Number.isNaN(value));
-
-// Runtime type ranks giving a total order across mixed types: number < string < boolean < other.
-const RANK_NUMBER = 0;
-const RANK_STRING = 1;
-const RANK_BOOLEAN = 2;
-const RANK_OTHER = 3;
-
-const typeRank = (value: unknown): number => {
-  switch (typeof value) {
-    case 'number':
-      return RANK_NUMBER;
-    case 'string':
-      return RANK_STRING;
-    case 'boolean':
-      return RANK_BOOLEAN;
-    default:
-      return RANK_OTHER;
-  }
+// A record paired with its storage path. AceBase's native sort breaks ties by
+// comparing snapshot paths, so the OR-merge pipeline carries paths alongside
+// the values instead of bare records.
+export type SnapshotEntry<T extends Value = Value> = {
+  readonly path: string;
+  readonly value: T;
 };
 
-// Natural comparison within a single runtime type rank; other values fall back to their
-// string form (equal forms yield 0, so sort stability keeps their relative order).
-const compareValues = (a: unknown, b: unknown): number => {
-  if (typeof a === 'number' && typeof b === 'number') {
-    return a - b;
+// Minimal equivalent of PathInfo.getPathKeys from acebase-core 1.28.1,
+// which AceBase 1.29.13 uses for native query sorting.
+const sortKeySegments = (field: string): ReadonlyArray<string | number> => {
+  const normalized = field
+    .replace(/\[/g, '/[')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
+  if (normalized.length === 0) {
+    return [];
   }
-  const sa = String(a);
-  const sb = String(b);
-  if (sa === sb) {
+
+  return normalized.split('/').map((key) => {
+    if (!key.startsWith('[')) {
+      return key;
+    }
+
+    // biome-ignore lint/correctness/useParseIntRadix: PathInfo uses parseInt without radix
+    return Number.parseInt(key.slice(1, -1));
+  });
+};
+
+// Port of the native lookup in query.js sortMatches: walking stops at null or
+// non-object nodes and at absent keys, every miss resolving to null.
+const resolveSortValue = (
+  record: Value,
+  segments: ReadonlyArray<string | number>
+): unknown =>
+  segments.reduce<unknown>((node, segment) => {
+    if (node === null || typeof node !== 'object' || !(segment in node)) {
+      return null;
+    }
+
+    return (node as Record<string, unknown>)[segment];
+  }, record);
+
+const looselyEquals = (left: unknown, right: unknown): boolean => {
+  // AceBase intentionally uses abstract equality here, including the language's
+  // object-to-primitive conversion rules.
+  // biome-ignore lint/suspicious/noDoubleEquals: parity with AceBase 1.29.13
+  return left == right;
+};
+
+const tieBreakByPath = (a: SnapshotEntry, b: SnapshotEntry): number => {
+  if (a.path === b.path) {
     return 0;
   }
 
-  return sa < sb ? -1 : 1;
+  return a.path < b.path ? -1 : 1;
 };
 
-// Missing values always sort last regardless of direction; undefined means both are present.
-const compareMissing = (a: unknown, b: unknown): number | undefined => {
-  const missingA = isMissingValue(a);
-  const missingB = isMissingValue(b);
-  if (!missingA && !missingB) {
+const compareNulls = (
+  left: unknown,
+  right: unknown,
+  ascending: boolean
+): number | undefined => {
+  if (left !== null && right !== null) {
     return undefined;
   }
-  if (missingA && missingB) {
+  if (left === right) {
     return 0;
   }
 
-  return missingA ? 1 : -1;
+  return (left === null) === ascending ? -1 : 1;
 };
 
-// Cross-type ordering by runtime rank; equal ranks defer to the natural comparison.
-const compareByRank = (a: unknown, b: unknown): number => {
-  const rankA = typeRank(a);
-  const rankB = typeRank(b);
-  if (rankA !== rankB) {
-    return rankA < rankB ? -1 : 1;
-  }
-
-  return 0;
-};
-
-// Builds the comparator for one sort config; missing values sort last regardless of
-// direction, then cross-type ranks, and direction applies only to the natural comparison.
+// Exact port of the native single-key comparator (query.js sortMatches): null
+// sorts first ascending and last descending, loosely equal values tie-break by
+// snapshot path, and remaining pairs order through JS `<` — cross-type numeric
+// coercions included. Both-null pairs return 0, deferring to sort stability
+// exactly like the native engine does.
 const comparatorFor =
   ({ field, direction }: SortBy) =>
-  <T extends Value>(a: T, b: T): number => {
-    const va = a[field];
-    const vb = b[field];
-
-    const missingOrder = compareMissing(va, vb);
-    if (missingOrder !== undefined) {
-      return missingOrder;
+  (a: SnapshotEntry, b: SnapshotEntry): number => {
+    const ascending = direction === 'asc';
+    const segments = sortKeySegments(field);
+    const left = resolveSortValue(a.value, segments);
+    const right = resolveSortValue(b.value, segments);
+    const nullOrder = compareNulls(left, right, ascending);
+    if (nullOrder !== undefined) {
+      return nullOrder;
+    }
+    if (looselyEquals(left, right)) {
+      return tieBreakByPath(a, b);
     }
 
-    const crossTypeOrder = compareByRank(va, vb);
-    if (crossTypeOrder !== 0) {
-      return crossTypeOrder;
-    }
-
-    const natural = compareValues(va, vb);
-
-    return direction === 'asc' ? natural : -natural;
+    // The cast keeps runtime behavior identical to native `<` on raw values;
+    // TS would otherwise reject relational comparison of unknowns.
+    return (left as string) < (right as string) === ascending ? -1 : 1;
   };
 
 export const applySort =
   (config?: SortBy | undefined) =>
-  <T extends Value>(values: Array<T>): Array<T> =>
-    config ? [...values].sort(comparatorFor(config)) : values;
+  <T extends SnapshotEntry>(entries: ReadonlyArray<T>): Array<T> => {
+    if (!config) {
+      return [...entries];
+    }
+
+    // Native queries start from path order. Establish that stable-sort baseline
+    // before the comparator, whose both-null result intentionally remains 0.
+    return [...entries].sort(tieBreakByPath).sort(comparatorFor(config));
+  };

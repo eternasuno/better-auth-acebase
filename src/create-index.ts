@@ -40,10 +40,11 @@ export const createIndexesFromSchema =
           await db.indexes.delete(staleIndex.fileName);
         }
 
-        await db.indexes.create(modelName, fieldName, {
-          // Supported at runtime but missing from the shipped typings.
+        // db.indexes.create re-exports this call but its inherited options type
+        // (acebase-core) omits caseSensitive; the LocalApi signature types it.
+        await db.api.createIndex(modelName, fieldName, {
           caseSensitive: true,
-        } as Parameters<typeof db.indexes.create>[2]);
+        });
       })
     );
   };

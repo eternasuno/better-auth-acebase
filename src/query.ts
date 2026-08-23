@@ -5,6 +5,7 @@ import {
   applySelect,
   applySlice,
   applySort,
+  type SnapshotEntry,
   type SortBy,
   type Value,
 } from './utils.ts';
@@ -25,20 +26,40 @@ type QueryParams = {
   where?: CleanedWhere[] | undefined;
 };
 
-// OR groups run as separate queries; a row can match several groups.
-// Keep the first occurrence per id; records without an id are kept as-is.
-const dedupeById = (records: Value[]): Value[] => {
+// Snapshots carry their storage path: the merge pipeline needs it for AceBase's
+// snapshot-path tie-breaking and identity deduplication.
+const fetchSnapshotEntries = async (
+  query: DataReferenceQuery
+): Promise<Array<SnapshotEntry>> => {
+  const snapshots = await query.get();
+
+  // Query snapshots always carry loaded records (the engine skips deleted ones).
+  return snapshots.map((snapshot) => ({
+    path: snapshot.ref.path,
+    value: snapshot.val() as Value,
+  }));
+};
+
+const fetchAllEntries = (
+  queries: ReadonlyArray<DataReferenceQuery>
+): Promise<Array<SnapshotEntry>> =>
+  Promise.all(queries.map(fetchSnapshotEntries)).then((groups) =>
+    groups.flat()
+  );
+
+// OR groups can return the same row; keep the first occurrence per record path.
+// The path is the storage identity — record ids may be missing or remapped, so
+// deduplicating on them could merge distinct rows or keep duplicates.
+const dedupeByPath = (
+  entries: ReadonlyArray<SnapshotEntry>
+): Array<SnapshotEntry> => {
   const seen = new Set<string>();
 
-  return records.filter((record) => {
-    const { id } = record;
-    if (id === undefined) {
-      return true;
-    }
-    if (seen.has(id)) {
+  return entries.filter(({ path }) => {
+    if (seen.has(path)) {
       return false;
     }
-    seen.add(id);
+    seen.add(path);
 
     return true;
   });
@@ -78,20 +99,24 @@ type MergeParams = WindowParams & {
 };
 
 // Overlapping OR groups require complete result sets, so their snapshots are merged
-// in memory: id-dedupe -> sort -> slice -> join -> select.
+// in memory: path-dedupe -> sort (native semantics, ties broken by path) -> slice ->
+// join -> select. Sorting with native semantics keeps this path's order identical to
+// a single-group query, which AceBase sorts natively.
 const mergeOrGroupSnapshots =
   (db: AceBase) =>
   async (
     { creatorConfig, join, limit, model, offset, select, sortBy }: MergeParams,
     queries: ReadonlyArray<DataReferenceQuery>
   ): Promise<Value[]> => {
-    const shotArray = await Promise.all(queries.map(async (q) => q.get()));
-    let merged: Value[] = dedupeById(shotArray.flatMap((s) => s.getValues()));
-    merged = applySort(sortBy)(merged);
-    merged = applySlice({ limit, offset })(merged);
-    merged = await applyJoin(db)({ creatorConfig, joinConfig: join })(merged);
+    const sorted = applySort(sortBy)(
+      dedupeByPath(await fetchAllEntries(queries))
+    );
+    const sliced = applySlice({ limit, offset })(sorted);
+    const joined = await applyJoin(db)({ creatorConfig, joinConfig: join })(
+      sliced.map((entry) => entry.value)
+    );
 
-    return applySelect({ creatorConfig, model, select })(merged);
+    return applySelect({ creatorConfig, model, select })(joined);
   };
 
 export const findMany =
@@ -106,8 +131,12 @@ export const findMany =
     sortBy,
     where,
   }: QueryParams): Promise<T[]> => {
+    if (limit === 0) {
+      return [];
+    }
+
     // Sort/skip/take are pushed down natively only for a single OR group: overlapping OR groups
-    // require id-deduplication across complete result sets, and ordering across separately
+    // require path-deduplication across complete result sets, and ordering across separately
     // fetched groups is undefined, so multiple groups must be merged and sliced in memory.
     const queries = buildQuery(db)(model)(where);
     const singleQuery = queries.at(0);
@@ -152,11 +181,10 @@ export const findOne =
     // globally-first match may belong to any group, so the multi-group path must still fetch
     // everything and dedupe before picking the first row.
     const take = orGroupCount(where) <= 1 ? 1 : TAKE_ALL;
-    const shotArray = await Promise.all(
-      buildQuery(db)(model)(where, take).map(async (q) => q.get())
+    const results = dedupeByPath(
+      await fetchAllEntries(buildQuery(db)(model)(where, take))
     );
-    const results = dedupeById(shotArray.flatMap((s) => s.getValues()));
-    const first = results.at(0);
+    const first = results.at(0)?.value;
     if (first && join) {
       const joined = await applyJoin(db)({ creatorConfig, joinConfig: join })([
         first,
@@ -184,8 +212,7 @@ export const count =
       return counts.reduce((a, b) => a + b, 0);
     }
 
-    // Multiple OR groups may overlap: count via id-deduplicated snapshots instead.
-    const shotArray = await Promise.all(queries.map(async (q) => q.get()));
+    // Multiple OR groups may overlap: count via path-deduplicated snapshots instead.
 
-    return dedupeById(shotArray.flatMap((s) => s.getValues())).length;
+    return dedupeByPath(await fetchAllEntries(queries)).length;
   };

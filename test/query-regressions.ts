@@ -25,9 +25,6 @@ type PatternFilter = {
 
 type TestHelpers = Parameters<Parameters<typeof createTestSuite>[2]>[0];
 
-// Guards the native q.count() fast path: a filterless count must see every row
-// even when the result set exceeds AceBase's implicit take of 100 and
-// better-auth's defaultFindManyLimit of 100.
 export const unfilteredCountTestSuite = createTestSuite(
   'AceBase unfiltered count beyond default limit',
   {},
@@ -42,10 +39,6 @@ export const unfilteredCountTestSuite = createTestSuite(
   })
 );
 
-// Regression: AceBase's `like` operator always ignores case, so the sensitive
-// contains / starts_with / ends_with handlers silently degraded to
-// case-insensitive matching. They must use anchored regular expressions
-// without the `i` flag instead.
 export const caseSensitivePatternOperatorsTestSuite = createTestSuite(
   'AceBase case-sensitive pattern operators reject different case',
   {},
@@ -133,43 +126,29 @@ const patternMatchTests = (helpers: TestHelpers) => ({
     }),
 });
 
-const emptyListTests = ({ adapter, generate }: TestHelpers) => ({
-  'in with an empty list matches no rows': async () => {
+const emptyListTests = ({ adapter, generate }: TestHelpers) => {
+  const matchesWithEmptyList = async (operator: 'in' | 'not_in') => {
     await adapter.create({
       model: 'user',
       data: { ...(await generate('user')), name: '' },
       forceAllowId: true,
     });
-    const matches = await adapter.findMany({
-      model: 'user',
-      where: [
-        { field: 'name', operator: 'in', value: [], mode: 'insensitive' },
-      ],
-    });
 
-    expect(matches).toHaveLength(0);
-  },
-  'not_in with an empty list matches every row': async () => {
-    await adapter.create({
+    return adapter.findMany({
       model: 'user',
-      data: { ...(await generate('user')), name: '' },
-      forceAllowId: true,
+      where: [{ field: 'name', operator, value: [], mode: 'insensitive' }],
     });
-    const matches = await adapter.findMany({
-      model: 'user',
-      where: [
-        {
-          field: 'name',
-          operator: 'not_in',
-          value: [],
-          mode: 'insensitive',
-        },
-      ],
-    });
+  };
 
-    expect(matches).toHaveLength(1);
-  },
-});
+  return {
+    'in with an empty list matches no rows': async () => {
+      expect(await matchesWithEmptyList('in')).toHaveLength(0);
+    },
+    'not_in with an empty list matches every row': async () => {
+      expect(await matchesWithEmptyList('not_in')).toHaveLength(1);
+    },
+  };
+};
 
 const patternOperatorTests = (helpers: TestHelpers) => ({
   ...patternMatchTests(helpers),
@@ -275,12 +254,48 @@ const overlappingWriteTests = (helpers: TestHelpers) => {
   };
 };
 
-// OR groups can match the same row; every operation must process it only once.
 export const overlappingOrGroupsDeduplicationTestSuite = createTestSuite(
   'AceBase overlapping OR groups are deduplicated',
   { defaultBetterAuthOptions: extendedUserModelOptions },
   (helpers) => ({
     ...overlappingReadTests(helpers),
     ...overlappingWriteTests(helpers),
+  })
+);
+
+const limitZeroWhere = [
+  { field: 'name', value: 'LimitZero', operator: 'eq' as const },
+  {
+    field: 'name',
+    value: 'LimitZero',
+    operator: 'eq' as const,
+    connector: 'OR' as const,
+  },
+];
+
+export const findManyLimitZeroTestSuite = createTestSuite(
+  'AceBase findMany limit zero returns no rows',
+  {},
+  ({ adapter, generate }) => ({
+    'returns no rows for native and merged queries': async () => {
+      await adapter.create({
+        model: 'user',
+        data: { ...(await generate('user')), name: 'LimitZero', age: 0 },
+        forceAllowId: true,
+      });
+      const native = await adapter.findMany({
+        model: 'user',
+        where: limitZeroWhere.slice(0, 1),
+        limit: 0,
+      });
+      const merged = await adapter.findMany({
+        model: 'user',
+        where: limitZeroWhere,
+        limit: 0,
+      });
+
+      expect(native).toEqual([]);
+      expect(merged).toEqual([]);
+    },
   })
 );
