@@ -2,10 +2,16 @@ import type { CreatorConfig } from './join.ts';
 
 export type Value = Record<string, unknown>;
 
-// AceBase drops null values, so null is encoded as this sentinel string on write and decoded
-// back to null on read. A stored string exactly equal to the sentinel is therefore
-// indistinguishable from an encoded null (known collision risk, documented rather than avoided).
-export const NULL_MARKER = '__acebase_null__';
+// AceBase drops null values (its node writer silently skips null children) and rejects arrays
+// containing them, so null cannot be persisted directly. Nulls are encoded as this sentinel
+// string on write and decoded back to null on read — including values nested inside json
+// fields and arrays.
+//
+// The random-looking suffix is fixed on purpose: it keeps the marker stable across
+// processes and versions while making an accidental collision with real user data
+// practically impossible (the exact-match ambiguity documented below remains purely
+// theoretical).
+export const NULL_MARKER = '__acebase_null__:v2:1fc8c21f5a3f015e455c7379d0c42e6c';
 
 const isPlainContainer = (value: unknown) =>
   typeof value === 'object' &&
@@ -39,9 +45,17 @@ const deepNullMarker =
     return changed ? (result as T) : value;
   };
 
-// AceBase drops null values and rejects arrays containing them, so nulls become a marker string
-// on write; the marker string would be indistinguishable from real data on read, so it maps back
-// to null. Dates, Map/Set, and class instances are passed through untouched.
+// The mapping must stay IDEMPOTENT (toNullMarker(toNullMarker(v)) === toNullMarker(v)):
+// better-auth's factory runs customTransformInput over where-clause values unconditionally,
+// and stacked adapter factories apply it again (@better-auth/test-utils wraps the real adapter
+// in an outer factory whose disableTransformInput only exempts data, not where clauses —
+// verified against better-auth 1.6.29). A value may therefore be encoded more than once.
+//
+// That rules out collision-proof escaping schemes (e.g. prefix doubling): idempotence plus a
+// total decode forces encode(M) === M, which in turn makes a stored string equal to the
+// sentinel indistinguishable from an encoded null. The trade-off is accepted and documented:
+// a stored string exactly equal to NULL_MARKER reads back as null (in practice only if data
+// deliberately contains the marker itself).
 export const toNullMarker = deepNullMarker(
   () => NULL_MARKER,
   (v) => v === null

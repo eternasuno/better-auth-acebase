@@ -12,6 +12,7 @@ import { AceBase } from 'acebase';
 import type { BetterAuthOptions } from 'better-auth';
 import { afterAll, describe, expect, it } from 'vitest';
 import { acebaseAdapter } from '../src/adapter';
+import { fromNullMarker, NULL_MARKER, toNullMarker } from '../src/utils';
 
 // Extra user fields used by the regression suites below; declared through
 // better-auth options so the factory maps and validates them like any column.
@@ -53,6 +54,7 @@ describe('AceBase Adapter', async () => {
       overlappingOrGroupsDeduplicationTestSuite(),
       nestedNullValuesRoundTripTestSuite(),
       joinExplicitLimitTestSuite(),
+      sentinelAmbiguityTestSuite(),
     ],
   });
 
@@ -338,6 +340,90 @@ const nestedNullValuesRoundTripTestSuite = createTestSuite(
 
       expect(found?.profile).toEqual({ bio: null, level: 2 });
       expect(found?.tags).toEqual([null]);
+    },
+  })
+);
+
+// Unit-level pin on the null-marker encoding. The mapping is intentionally NOT collision-free:
+// it must be idempotent because better-auth's factory may apply customTransformInput to the
+// same value more than once (stacked factories re-transform where clauses), and idempotence
+// plus a total decode makes any escaping scheme impossible. Round trips therefore preserve
+// every value EXCEPT strings exactly equal to the sentinel, which read back as null.
+describe('null marker encoding', () => {
+  const roundTrip = (value: unknown) => fromNullMarker(toNullMarker(value));
+
+  it('is idempotent in both directions', () => {
+    const inputs = [
+      null,
+      NULL_MARKER,
+      `${NULL_MARKER}x`,
+      '',
+      'plain',
+      3,
+      [NULL_MARKER, null],
+      { a: { b: null }, c: NULL_MARKER, d: [{ e: null }] },
+    ];
+    for (const input of inputs) {
+      expect(toNullMarker(toNullMarker(input))).toEqual(toNullMarker(input));
+      expect(fromNullMarker(fromNullMarker(input))).toEqual(fromNullMarker(input));
+    }
+  });
+
+  it('round trips every value except the literal sentinel', () => {
+    const lossless = [
+      `${NULL_MARKER}x`,
+      '',
+      'plain',
+      3,
+      [`${NULL_MARKER}x`, null],
+      { a: { b: null } },
+    ];
+    for (const input of lossless) {
+      expect(roundTrip(input)).toEqual(input);
+    }
+
+    expect(roundTrip(null)).toBeNull();
+    expect(roundTrip(NULL_MARKER)).toBeNull();
+  });
+});
+
+// Documents the accepted trade-off of the sentinel scheme: the encoding must be idempotent
+// (better-auth's transform pipeline can encode the same value twice), which makes a stored
+// string exactly equal to NULL_MARKER indistinguishable from an encoded null — on writes,
+// reads, and queries alike.
+const sentinelAmbiguityTestSuite = createTestSuite(
+  'AceBase null-marker ambiguity is documented behavior',
+  {},
+  ({ adapter, generate }) => ({
+    'a stored literal sentinel string reads back as null': async () => {
+      const created = await adapter.create({
+        model: 'user',
+        data: { ...(await generate('user')), name: NULL_MARKER },
+        forceAllowId: true,
+      });
+
+      const found = (await adapter.findOne({
+        model: 'user',
+        where: [{ field: 'id', value: created.id, operator: 'eq' }],
+      })) as { name?: string | null } | null;
+
+      expect(found?.name).toBeNull();
+    },
+    'eq null matches rows holding the literal sentinel string': async () => {
+      const created = await adapter.create({
+        model: 'user',
+        data: { ...(await generate('user')), name: NULL_MARKER },
+        forceAllowId: true,
+      });
+
+      // The row stores the sentinel string, which is exactly what an encoded null
+      // looks like — so querying for null finds it too. Indistinguishable by design.
+      const nulls = (await adapter.findMany({
+        model: 'user',
+        where: [{ field: 'name', value: null, operator: 'eq' }],
+      })) as Array<{ id: string }>;
+
+      expect(nulls.map((row) => row.id)).toContain(created.id);
     },
   })
 );
