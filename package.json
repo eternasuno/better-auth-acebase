@@ -17,6 +17,9 @@
     "dist"
   ],
   "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eternasuno/better-auth-acebase.git"
