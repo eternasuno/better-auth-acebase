@@ -6,7 +6,14 @@ import {
 } from 'better-auth/adapters';
 import { count, findMany, findOne } from './query.ts';
 import { fromNullMarker, toNullMarker } from './utils.ts';
-import { create, createSchema, remove, removeMany, update, updateMany } from './write.ts';
+import {
+  create,
+  createSchema,
+  remove,
+  removeMany,
+  update,
+  updateMany,
+} from './write.ts';
 
 export const createAdapter =
   (db: AceBase): AdapterFactoryCustomizeAdapterCreator =>

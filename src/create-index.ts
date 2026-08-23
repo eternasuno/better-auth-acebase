@@ -7,7 +7,7 @@ const fieldIterator = function* (schema: BetterAuthDBSchema) {
     const { modelName } = modelSchema;
     for (const [fieldKey, fieldAttr] of Object.entries(modelSchema.fields)) {
       if (fieldAttr.index || fieldAttr.unique) {
-        yield [modelName, modelKey, fieldKey];
+        yield [modelName, modelKey, fieldKey] as const;
       }
     }
   }
@@ -32,7 +32,9 @@ export const createIndexesFromSchema =
         const fieldName = getFieldName({ field: fieldKey, model: modelKey });
         const staleIndex = existingIndexes.find(
           (index) =>
-            index.path === modelName && index.key === fieldName && index.caseSensitive !== true
+            index.path === modelName &&
+            index.key === fieldName &&
+            index.caseSensitive !== true
         );
         if (staleIndex) {
           await db.indexes.delete(staleIndex.fileName);

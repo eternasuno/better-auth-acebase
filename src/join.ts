@@ -3,11 +3,12 @@ import type { JoinConfig } from 'better-auth';
 import type { AdapterFactoryCustomizeAdapterCreator } from 'better-auth/adapters';
 import type { Value } from './utils.ts';
 
-export type CreatorConfig = Parameters<AdapterFactoryCustomizeAdapterCreator>[0];
+export type CreatorConfig =
+  Parameters<AdapterFactoryCustomizeAdapterCreator>[0];
 
 type JoinParams = {
   creatorConfig: CreatorConfig;
-  joinConfig?: JoinConfig;
+  joinConfig?: JoinConfig | undefined;
 };
 
 type JoinEntry = {

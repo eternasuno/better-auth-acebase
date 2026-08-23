@@ -3,11 +3,15 @@ import type { CleanedWhere, WhereOperator } from 'better-auth/adapters';
 
 type DataReferenceQuery = ReturnType<AceBase['query']>;
 
+export type { DataReferenceQuery };
+
 type FilterParams = Parameters<DataReferenceQuery['filter']>;
 
 type ToFilterParams = (where: CleanedWhere) => FilterParams;
 
-type WhereOp = { sensitive: ToFilterParams; insensitive: ToFilterParams } | ToFilterParams;
+type WhereOp =
+  | { sensitive: ToFilterParams; insensitive: ToFilterParams }
+  | ToFilterParams;
 
 const escapeRegExp = (str: string): string => {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -101,12 +105,32 @@ const FILTERS_TABLE: Record<WhereOperator, WhereOp> = {
   lte,
   ne: { insensitive: insensitiveNe, sensitive: sensitiveNe },
   not_in: { insensitive: insensitiveNotIn, sensitive: notIn },
-  starts_with: { insensitive: insensitiveStartsWith, sensitive: sensitiveStartsWith },
+  starts_with: {
+    insensitive: insensitiveStartsWith,
+    sensitive: sensitiveStartsWith,
+  },
 };
 
-const toFilterParams = (where: CleanedWhere) => {
-  const op = FILTERS_TABLE[where.operator];
-  const handler = typeof op === 'function' ? op : op[where.mode];
+// CleanedWhere keeps operator / mode as `T | undefined` in its public shape even though
+// better-auth's factory fills both before the adapter ever sees a where clause; the guard
+// below only satisfies the type checker and is unreachable at runtime.
+const resolveFilterHandler = ({
+  mode,
+  operator,
+}: CleanedWhere): ToFilterParams | undefined => {
+  if (operator === undefined || mode === undefined) {
+    return undefined;
+  }
+  const op = FILTERS_TABLE[operator];
+  return typeof op === 'function' ? op : op[mode];
+};
+
+const toFilterParams = (where: CleanedWhere): FilterParams => {
+  const handler = resolveFilterHandler(where);
+  if (!handler) {
+    throw new Error(`Unsupported where clause: ${JSON.stringify(where)}`);
+  }
+
   return handler(where);
 };
 

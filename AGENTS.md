@@ -17,12 +17,21 @@ Published artifacts: `exports`/`types`/`files` all point at `dist/` (`./dist/ada
 ## Commands
 
 - `pnpm build` — `tsc -p tsconfig.build.json` → `dist/` (compiled ESM + `.d.ts`; `dist/` gitignored). Run it after changing source; both CI workflows run it too.
-- `pnpm check` — `tsc --noEmit && biome check --write`. The first tsc typechecks both `src/` and `test/` (vitest transpiles but never typechecks) via the single dev `tsconfig.json`. **Note: `--write` auto-fixes files**, so running it may modify the working tree (it re-formats in place). Run it after changes; it passed clean with 0 fixes when last verified.
-- `pnpm test` — `vitest run`. Runs the full better-auth adapter suite (146 tests, ~14s) against a **real AceBase instance** created in a temp dir (`test/adapter.test.ts` via `mkdtemp`). Integration-level, not mocked. Composition: official `testAdapter` harness suites from `@better-auth/test-utils` (`normalTestSuite`, `authFlowTestSuite`, `caseInsensitiveTestSuite`), local `createTestSuite` suites (`unfilteredCountTestSuite` — count > `defaultFindManyLimit` 100, `caseSensitivePatternOperatorsTestSuite`, `overlappingOrGroupsDeduplicationTestSuite`, `nestedNullValuesRoundTripTestSuite`, `joinExplicitLimitTestSuite`), and a standalone `usePlural: true` describe block. Custom suites MUST stay registered AFTER the official ones — their options merge into the shared harness and would leak into official suites otherwise.
+- `pnpm check` — `tsc --noEmit && biome check --write`. The first tsc typechecks both `src/` and `test/` (vitest transpiles but never typechecks) via the single dev `tsconfig.json`. **Note: `--write` auto-fixes files**, so running it may modify the working tree (it re-formats in place). Run it after changes.
+- `pnpm test` — `vitest run`. Runs the full better-auth adapter suite (152 tests, ~14s) against a **real AceBase instance** created in a temp dir (`test/adapter.test.ts` via `mkdtemp`). Integration-level, not mocked. Composition: official `testAdapter` harness suites from `@better-auth/test-utils` (`normalTestSuite`, `authFlowTestSuite`, `caseInsensitiveTestSuite`), local `createTestSuite` suites (`unfilteredCountTestSuite` — count > `defaultFindManyLimit` 100, `caseSensitivePatternOperatorsTestSuite`, `patternInsensitiveAndWildcardTestSuite`, `overlappingOrGroupsDeduplicationTestSuite`, `nestedNullValuesRoundTripTestSuite`, `joinExplicitLimitTestSuite`, `sentinelAmbiguityTestSuite`), a standalone `usePlural: true` describe block in `adapter.test.ts`, and unit-level null-marker pins in `null-marker.unit.test.ts`. Suite factories live in their own modules (not `*.test.ts`) because Biome forbids exports from test files. Custom suites MUST stay registered AFTER the official ones — their options merge into the shared harness and would leak into official suites otherwise.
 
-Style is enforced by biome (single quotes, semicolons always, 2-space indent, line width 98). `noExplicitAny` is enabled (repo default) — the adapter methods are typed with generics (`<T = Value>`), not `any`.
+## Code style
+
+Style is enforced by biome (single quotes, semicolons always, 2-space indent, line width 80). On top of the `recommended` preset, the config enforces: promise hygiene (`noFloatingPromises`, `noMisusedPromises`), size budgets (cognitive complexity ≤ 10, ≤ 40 lines per function, ≤ 300 lines per file, blank lines excluded), `noUndeclaredDependencies`, immutable accumulation (`noAccumulatingSpread`), and readonly class fields. `noExplicitAny` remains on via `recommended` — adapter methods are typed with generics (`<T = Value>`), not `any`.
 
 All comments and log messages must be written in English.
+
+Code style principles:
+
+- Size budgets are hard lint limits. When a function or file exceeds them, split it or extract helpers/data-driven maps — do not raise the limits.
+- Name things meaningfully: variables and functions state what they compute, files state what they own (`where.ts`, `join.ts`). No single-letter names outside trivial scopes (loop indices, tiny callbacks).
+- Comments explain WHY a decision, constraint, or workaround exists — never narrate WHAT the code does. Keep them rare and short; if code needs a long comment, simplify the code first.
+- Prefer immutable transformations (spread/concat/map/filter) over mutating accumulators or in-place edits; no assignment inside expressions.
 
 ## Architecture / file ownership
 

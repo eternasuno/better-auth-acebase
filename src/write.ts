@@ -58,7 +58,9 @@ export const update =
     const result = await findOne(db)(creatorConfig)({ model, where });
 
     if (result?.id) {
-      const ref = await db.ref(`${model}/${result.id}`).update(update as Record<string, unknown>);
+      const ref = await db
+        .ref(`${model}/${result.id}`)
+        .update(update as Record<string, unknown>);
       const updated = await ref.get();
 
       return updated.val() as T | null;
