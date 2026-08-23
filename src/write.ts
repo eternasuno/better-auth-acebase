@@ -5,7 +5,7 @@ import { createIndexesFromSchema } from './create-index.ts';
 import type { CreatorConfig } from './join.ts';
 import { findOne } from './query.ts';
 import type { Value } from './utils.ts';
-import { buildQuery } from './where.ts';
+import { buildQuery, type DataReferenceQuery } from './where.ts';
 
 type CreateParams<T extends Value = Value> = {
   model: string;
@@ -36,13 +36,35 @@ export const remove =
     }
   };
 
+type DataReference = Awaited<ReturnType<DataReferenceQuery['find']>>[number];
+
+const findDistinctRefs = async (
+  queries: ReadonlyArray<DataReferenceQuery>
+): Promise<DataReference[]> => {
+  const groups = await Promise.all(queries.map((query) => query.find()));
+  const paths = new Set<string>();
+
+  return groups.flat().filter((ref) => {
+    if (paths.has(ref.path)) {
+      return false;
+    }
+    paths.add(ref.path);
+
+    return true;
+  });
+};
+
+const fulfilledCount = (
+  results: ReadonlyArray<PromiseSettledResult<unknown>>
+) => results.filter((result) => result.status === 'fulfilled').length;
+
 export const removeMany =
   (db: AceBase) =>
   async ({ model, where }: RemoveParams) => {
-    const queries = buildQuery(db)(model)(where);
-    const results = await Promise.all(queries.map((q) => q.remove()));
+    const refs = await findDistinctRefs(buildQuery(db)(model)(where));
+    const results = await Promise.allSettled(refs.map((ref) => ref.remove()));
 
-    return results.flat().filter((r) => r.success).length;
+    return fulfilledCount(results);
   };
 
 type UpdateParams = {
@@ -72,13 +94,12 @@ export const update =
 export const updateMany =
   (db: AceBase) =>
   async ({ model, where, update }: UpdateParams): Promise<number> => {
-    const queries = buildQuery(db)(model)(where);
-    const refs = await Promise.all(queries.map((q) => q.find()));
+    const refs = await findDistinctRefs(buildQuery(db)(model)(where));
     const results = await Promise.allSettled(
-      refs.flat().map((r) => r.update(update as Record<string, unknown>))
+      refs.map((ref) => ref.update(update as Record<string, unknown>))
     );
 
-    return results.filter((r) => r.status === 'fulfilled').length;
+    return fulfilledCount(results);
   };
 
 type CreateSchemaParams = {

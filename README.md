@@ -38,7 +38,8 @@ export const auth = betterAuth({
 pnpm install
 pnpm build  # tsc -> dist/ (compiled ESM + types)
 pnpm test   # runs better-auth adapter test suite
-pnpm check  # tsc --noEmit + biome check
+pnpm check      # tsc --noEmit + biome check
+pnpm check:fix  # applies Biome fixes
 ```
 
 ## Known limitations
@@ -54,11 +55,12 @@ pnpm check  # tsc --noEmit + biome check
   encoded more than once. That rules out collision-proof escaping schemes: a stored
   string exactly equal to the sentinel reads back as `null` (theoretical risk,
   accepted and documented).
-- **Query strategy**: filters are translated into AceBase queries, but sorting and
-  pagination are pushed down natively only for single OR-group queries. Multiple OR
-  groups run as parallel queries merged in memory (with id deduplication), and
-  unfiltered/single-group queries load full result sets
-  (`TAKE_ALL = Number.MAX_SAFE_INTEGER`) before in-memory operations where applicable.
+- **Query strategy**: filters are translated into AceBase queries. Single OR-group
+  queries push sorting and pagination down to AceBase, while counts use its native
+  count operation. Multiple OR groups run as parallel queries over their complete
+  matching sets, then merge, deduplicate, sort, and paginate in memory. Queries use
+  an explicit `TAKE_ALL = Number.MAX_SAFE_INTEGER` where needed to avoid AceBase's
+  implicit 100-row limit.
 - **Case sensitivity**: indexes are created with `caseSensitive: true`, so
   `eq`/`in`/`not_in` behave case-sensitively by default; better-auth's insensitive
   mode is implemented via case-insensitive regex matches instead.

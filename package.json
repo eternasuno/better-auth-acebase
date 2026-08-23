@@ -40,7 +40,8 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "check": "tsc --noEmit && biome check --write",
+    "check": "tsc --noEmit && biome check",
+    "check:fix": "biome check --write",
     "prepublishOnly": "pnpm build",
     "test": "vitest run"
   }

@@ -68,7 +68,9 @@ const notIn: ToFilterParams = ({ field, value }) => [field, '!in', value];
 // AceBase's in / !in compare values exactly, so the insensitive variants must
 // go through a case-insensitive regex alternation instead.
 const toAlternation = (values: ReadonlyArray<unknown>) =>
-  values.map((value) => escapeRegExp(String(value))).join('|');
+  values.length === 0
+    ? '(?!)'
+    : values.map((value) => escapeRegExp(String(value))).join('|');
 
 const insensitiveIn: ToFilterParams = ({ field, value }) => [
   field,
