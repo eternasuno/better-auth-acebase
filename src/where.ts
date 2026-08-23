@@ -19,7 +19,11 @@ const insensitiveContains: ToFilterParams = ({ field, value }) => [
   new RegExp(escapeRegExp(String(value)), 'i'),
 ];
 
-const sensitiveContains: ToFilterParams = ({ field, value }) => [field, 'like', `*${value}*`];
+const sensitiveContains: ToFilterParams = ({ field, value }) => [
+  field,
+  'matches',
+  new RegExp(escapeRegExp(String(value))),
+];
 
 const insensitiveEndsWith: ToFilterParams = ({ field, value }) => [
   field,
@@ -27,7 +31,11 @@ const insensitiveEndsWith: ToFilterParams = ({ field, value }) => [
   new RegExp(`${escapeRegExp(String(value))}$`, 'i'),
 ];
 
-const sensitiveEndsWith: ToFilterParams = ({ field, value }) => [field, 'like', `*${value}`];
+const sensitiveEndsWith: ToFilterParams = ({ field, value }) => [
+  field,
+  'matches',
+  new RegExp(`${escapeRegExp(String(value))}$`),
+];
 
 const insensitiveEq: ToFilterParams = ({ field, value }) => [
   field,
@@ -45,7 +53,7 @@ const insensitiveNe: ToFilterParams = ({ field, value }) => [
 
 const sensitiveNe: ToFilterParams = ({ field, value }) => [field, '!=', value];
 
-// ponytail: gt, gte, lt, lte, in, not_in are identical in both modes — single handler
+// gt, gte, lt, lte, in, not_in behave identically in both modes — single shared handler
 const gt: ToFilterParams = ({ field, value }) => [field, '>', value];
 const gte: ToFilterParams = ({ field, value }) => [field, '>=', value];
 const lt: ToFilterParams = ({ field, value }) => [field, '<', value];
@@ -53,13 +61,34 @@ const lte: ToFilterParams = ({ field, value }) => [field, '<=', value];
 const opIn: ToFilterParams = ({ field, value }) => [field, 'in', value];
 const notIn: ToFilterParams = ({ field, value }) => [field, '!in', value];
 
+// AceBase's in / !in compare values exactly, so the insensitive variants must
+// go through a case-insensitive regex alternation instead.
+const toAlternation = (values: ReadonlyArray<unknown>) =>
+  values.map((value) => escapeRegExp(String(value))).join('|');
+
+const insensitiveIn: ToFilterParams = ({ field, value }) => [
+  field,
+  'matches',
+  new RegExp(`^(${toAlternation(value as ReadonlyArray<unknown>)})$`, 'i'),
+];
+
+const insensitiveNotIn: ToFilterParams = ({ field, value }) => [
+  field,
+  '!matches',
+  new RegExp(`^(${toAlternation(value as ReadonlyArray<unknown>)})$`, 'i'),
+];
+
 const insensitiveStartsWith: ToFilterParams = ({ field, value }) => [
   field,
   'matches',
   new RegExp(`^${escapeRegExp(String(value))}`, 'i'),
 ];
 
-const sensitiveStartsWith: ToFilterParams = ({ field, value }) => [field, 'like', `${value}*`];
+const sensitiveStartsWith: ToFilterParams = ({ field, value }) => [
+  field,
+  'matches',
+  new RegExp(`^${escapeRegExp(String(value))}`),
+];
 
 const FILTERS_TABLE: Record<WhereOperator, WhereOp> = {
   contains: { insensitive: insensitiveContains, sensitive: sensitiveContains },
@@ -67,11 +96,11 @@ const FILTERS_TABLE: Record<WhereOperator, WhereOp> = {
   eq: { insensitive: insensitiveEq, sensitive: sensitiveEq },
   gt,
   gte,
-  in: opIn,
+  in: { insensitive: insensitiveIn, sensitive: opIn },
   lt,
   lte,
   ne: { insensitive: insensitiveNe, sensitive: sensitiveNe },
-  not_in: notIn,
+  not_in: { insensitive: insensitiveNotIn, sensitive: notIn },
   starts_with: { insensitive: insensitiveStartsWith, sensitive: sensitiveStartsWith },
 };
 
@@ -105,14 +134,22 @@ const toFilterParamsGroups = (
 ): ReadonlyArray<ReadonlyArray<FilterParams>> =>
   splitByOrClause(where).map((g) => g.map(toFilterParams));
 
-const TAKE_ALL = Number.MAX_SAFE_INTEGER; // AceBase filterless queries default to take=100; take the full set explicitly
+// AceBase filterless queries default to take=100; take the full set explicitly
+export const TAKE_ALL = Number.MAX_SAFE_INTEGER;
+
+// Number of independent OR groups a where-clause splits into (no where counts as one group).
+export const orGroupCount = (where?: ReadonlyArray<CleanedWhere>): number =>
+  where?.length ? splitByOrClause(where).length : 1;
 
 export const buildQuery =
   (db: AceBase) =>
   (model: string) =>
-  (where?: ReadonlyArray<CleanedWhere>): ReadonlyArray<DataReferenceQuery> =>
+  (
+    where?: ReadonlyArray<CleanedWhere>,
+    take: number = TAKE_ALL
+  ): ReadonlyArray<DataReferenceQuery> =>
     where?.length
       ? toFilterParamsGroups(where).map((g) =>
-          g.reduce((q, p) => q.filter(...p), db.query(model).take(TAKE_ALL))
+          g.reduce((q, p) => q.filter(...p), db.query(model).take(take))
         )
-      : [db.query(model).take(TAKE_ALL)];
+      : [db.query(model).take(take)];

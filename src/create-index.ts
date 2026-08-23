@@ -13,13 +13,35 @@ const fieldIterator = function* (schema: BetterAuthDBSchema) {
   }
 };
 
+// AceBase indexes lowercase string keys unless created with caseSensitive: true,
+// which would make eq / in lookups on indexed fields case-insensitive even when
+// better-auth asks for the sensitive (default) mode. Recreate any stale index
+// that predates that option so upgrades pick up exact-case matching.
 export const createIndexesFromSchema =
   (schema: BetterAuthDBSchema) =>
   ({ getFieldName }: CreatorConfig) =>
-  (db: AceBase) =>
-    Promise.all(
-      fieldIterator(schema).map(async ([modelName, modelKey, fieldKey]) => {
+  async (db: AceBase) => {
+    const indexedFields = [...fieldIterator(schema)];
+    if (indexedFields.length === 0) {
+      return;
+    }
+
+    const existingIndexes = await db.indexes.get();
+    await Promise.all(
+      indexedFields.map(async ([modelName, modelKey, fieldKey]) => {
         const fieldName = getFieldName({ field: fieldKey, model: modelKey });
-        await db.indexes.create(modelName, fieldName);
+        const staleIndex = existingIndexes.find(
+          (index) =>
+            index.path === modelName && index.key === fieldName && index.caseSensitive !== true
+        );
+        if (staleIndex) {
+          await db.indexes.delete(staleIndex.fileName);
+        }
+
+        await db.indexes.create(modelName, fieldName, {
+          // Supported at runtime but missing from the shipped typings.
+          caseSensitive: true,
+        } as Parameters<typeof db.indexes.create>[2]);
       })
     );
+  };

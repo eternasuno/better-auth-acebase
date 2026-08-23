@@ -4,7 +4,7 @@ import {
   type AdapterFactoryCustomizeAdapterCreator,
   createAdapterFactory,
 } from 'better-auth/adapters';
-import { count, findMay, findOne } from './query.ts';
+import { count, findMany, findOne } from './query.ts';
 import { fromNullMarker, toNullMarker } from './utils.ts';
 import { create, createSchema, remove, removeMany, update, updateMany } from './write.ts';
 
@@ -16,7 +16,7 @@ export const createAdapter =
     createSchema: createSchema(db)(creatorConfig),
     delete: remove(db)(creatorConfig),
     deleteMany: removeMany(db),
-    findMany: findMay(db)(creatorConfig),
+    findMany: findMany(db)(creatorConfig),
     findOne: findOne(db)(creatorConfig),
     update: update(db)(creatorConfig),
     updateMany: updateMany(db),

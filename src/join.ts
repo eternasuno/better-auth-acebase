@@ -15,17 +15,22 @@ type JoinEntry = {
   config: JoinConfig[string];
 };
 
-const excute =
+const execute =
   ({ model, config }: JoinEntry) =>
   <T extends Value>(values: Array<T>) =>
   (db: AceBase) => {
     const foreignKeys = [...new Set(values.map((v) => v[config.on.from]))];
 
-    return db
-      .query(model)
-      .filter(config.on.to, 'in', foreignKeys)
-      .take(config.limit ?? 100)
-      .get();
+    return (
+      db
+        .query(model)
+        .filter(config.on.to, 'in', foreignKeys)
+        // better-auth always sets a numeric limit on join configs
+        // (defaultFindManyLimit ?? 100; 1 for one-to-one), so take it directly.
+        // The public JoinConfig type keeps `limit` optional, hence the cast.
+        .take(config.limit as number)
+        .get()
+    );
   };
 
 const merge =
@@ -58,7 +63,7 @@ export const applyJoin =
     for (const [modelKey, config] of Object.entries(joinConfig ?? {})) {
       const model = getModelName(modelKey);
       const entry = { config, model };
-      const shots = await excute(entry)(results)(db);
+      const shots = await execute(entry)(results)(db);
       results = merge(entry)(results)(shots);
     }
 

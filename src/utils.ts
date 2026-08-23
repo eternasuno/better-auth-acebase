@@ -2,11 +2,55 @@ import type { CreatorConfig } from './join.ts';
 
 export type Value = Record<string, unknown>;
 
+// AceBase drops null values, so null is encoded as this sentinel string on write and decoded
+// back to null on read. A stored string exactly equal to the sentinel is therefore
+// indistinguishable from an encoded null (known collision risk, documented rather than avoided).
 export const NULL_MARKER = '__acebase_null__';
 
-export const toNullMarker = <T>(value: T) => (value === null ? NULL_MARKER : value);
+const isPlainContainer = (value: unknown) =>
+  typeof value === 'object' &&
+  value !== null &&
+  (Array.isArray(value) ||
+    Object.getPrototypeOf(value) === Object.prototype ||
+    Object.getPrototypeOf(value) === null);
 
-export const fromNullMarker = <T>(value: T) => (value === NULL_MARKER ? null : value);
+const deepNullMarker =
+  (transform: (value: unknown) => unknown, matches: (value: unknown) => boolean) =>
+  <T>(value: T): T => {
+    if (matches(value)) {
+      return transform(value) as T;
+    }
+    if (!isPlainContainer(value)) {
+      return value;
+    }
+    let changed = false;
+    const container = value as Record<string, unknown> | Array<unknown>;
+    const result = (Array.isArray(container) ? [...container] : { ...container }) as Record<
+      string,
+      unknown
+    >;
+    for (const key of Object.keys(result)) {
+      const converted = deepNullMarker(transform, matches)(result[key]);
+      if (converted !== result[key]) {
+        changed = true;
+        result[key] = converted;
+      }
+    }
+    return changed ? (result as T) : value;
+  };
+
+// AceBase drops null values and rejects arrays containing them, so nulls become a marker string
+// on write; the marker string would be indistinguishable from real data on read, so it maps back
+// to null. Dates, Map/Set, and class instances are passed through untouched.
+export const toNullMarker = deepNullMarker(
+  () => NULL_MARKER,
+  (v) => v === null
+);
+
+export const fromNullMarker = deepNullMarker(
+  () => null,
+  (v) => v === NULL_MARKER
+);
 
 type SliceParams = {
   offset?: number;
@@ -30,7 +74,11 @@ const applyItemSelect =
     const aliasedSelect = new Set(select?.map((f) => getFieldName({ field: f, model })));
     const result: Value = {};
     for (const [key, value] of Object.entries(item)) {
-      result[key] = aliasedSelect.has(key) ? value : undefined;
+      if (!aliasedSelect.has(key)) {
+        continue;
+      }
+
+      result[key] = value;
     }
 
     return result;
@@ -46,25 +94,65 @@ export type SortBy = {
   direction: 'asc' | 'desc';
 };
 
-const compare =
-  <T>(a: T) =>
-  (b: T) => {
-    if (a === b) {
-      return 0;
-    }
+const isMissingValue = (value: unknown): boolean =>
+  value === undefined || (typeof value === 'number' && Number.isNaN(value));
 
-    return a > b ? 1 : -1;
-  };
+// Runtime type rank giving a total order across mixed types: number < string < boolean < other.
+const typeRank = (value: unknown): number => {
+  if (typeof value === 'number') {
+    return 0;
+  }
+  if (typeof value === 'string') {
+    return 1;
+  }
+  if (typeof value === 'boolean') {
+    return 2;
+  }
+
+  return 3;
+};
+
+// Natural comparison within a single runtime type rank; other values fall back to their
+// string form (equal forms yield 0, so sort stability keeps their relative order).
+const compareValues = (a: unknown, b: unknown): number => {
+  if (typeof a === 'number' && typeof b === 'number') {
+    return a - b;
+  }
+  const sa = String(a);
+  const sb = String(b);
+  if (sa === sb) {
+    return 0;
+  }
+
+  return sa < sb ? -1 : 1;
+};
 
 export const applySort =
   (config?: SortBy) =>
   <T extends Value>(values: Array<T>) =>
     config
       ? [...values].sort((a, b) => {
-          const va = a[config.field] as string;
-          const vb = b[config.field] as string;
-          const factor = config.direction === 'asc' ? 1 : -1;
+          const va = a[config.field];
+          const vb = b[config.field];
+          const missingA = isMissingValue(va);
+          const missingB = isMissingValue(vb);
 
-          return compare(va)(vb) * factor;
+          // Missing values always sort last, regardless of direction.
+          if (missingA || missingB) {
+            if (missingA && missingB) {
+              return 0;
+            }
+
+            return missingA ? 1 : -1;
+          }
+
+          const rankA = typeRank(va);
+          const rankB = typeRank(vb);
+          if (rankA !== rankB) {
+            return rankA < rankB ? -1 : 1;
+          }
+
+          // Direction applies only to the value comparison itself.
+          return compareValues(va, vb) * (config.direction === 'asc' ? 1 : -1);
         })
       : values;

@@ -72,11 +72,11 @@ export const updateMany =
   async ({ model, where, update }: UpdateParams): Promise<number> => {
     const queries = buildQuery(db)(model)(where);
     const refs = await Promise.all(queries.map((q) => q.find()));
-    const updated = await Promise.all(
+    const results = await Promise.allSettled(
       refs.flat().map((r) => r.update(update as Record<string, unknown>))
     );
 
-    return updated.length;
+    return results.filter((r) => r.status === 'fulfilled').length;
   };
 
 type CreateSchemaParams = {
