@@ -5,10 +5,9 @@ import type { CreatorConfig } from './join.ts';
 // access for index-signature-only keys, while Biome's useLiteralKeys forbids it.
 export type Value = { id?: string } & Record<string, unknown>;
 
-// AceBase drops null values (its node writer silently skips null children) and rejects arrays
-// containing them, so null cannot be persisted directly. Nulls are encoded as this sentinel
-// string on write and decoded back to null on read — including values nested inside json
-// fields and arrays.
+// AceBase drops null values, so nullable fields cannot be persisted directly. Better Auth
+// serializes JSON and arrays before these transforms run; only a field-level null needs this
+// sentinel on write and decoding on read.
 //
 // The random-looking suffix is fixed on purpose: it keeps the marker stable across
 // processes and versions while making an accidental collision with real user data
@@ -16,55 +15,6 @@ export type Value = { id?: string } & Record<string, unknown>;
 // theoretical).
 export const NULL_MARKER =
   '__acebase_null__:v2:1fc8c21f5a3f015e455c7379d0c42e6c';
-
-const isPlainContainer = (value: unknown) =>
-  typeof value === 'object' &&
-  value !== null &&
-  (Array.isArray(value) ||
-    Object.getPrototypeOf(value) === Object.prototype ||
-    Object.getPrototypeOf(value) === null);
-
-// Depth-first copy-on-write rewrite: every child goes through `walk`, and a container is
-// cloned only when at least one of its children actually changed.
-const convertChildren =
-  (walk: (value: unknown) => unknown) =>
-  (container: Array<unknown> | Record<string, unknown>): unknown => {
-    const clone = (
-      Array.isArray(container) ? [...container] : { ...container }
-    ) as Record<string, unknown>;
-    let changed = false;
-    for (const key of Object.keys(clone)) {
-      const converted = walk(clone[key]);
-      if (converted !== clone[key]) {
-        changed = true;
-        clone[key] = converted;
-      }
-    }
-
-    return changed ? clone : container;
-  };
-
-const deepNullMarker =
-  (
-    transform: (value: unknown) => unknown,
-    matches: (value: unknown) => boolean
-  ) =>
-  <T>(value: T): T => {
-    const walk = (node: unknown): unknown => {
-      if (matches(node)) {
-        return transform(node);
-      }
-      if (!isPlainContainer(node)) {
-        return node;
-      }
-
-      return convertChildren(walk)(
-        node as Array<unknown> | Record<string, unknown>
-      );
-    };
-
-    return walk(value) as T;
-  };
 
 // The mapping must stay IDEMPOTENT (toNullMarker(toNullMarker(v)) === toNullMarker(v)):
 // better-auth's factory runs customTransformInput over where-clause values unconditionally,
@@ -77,15 +27,11 @@ const deepNullMarker =
 // sentinel indistinguishable from an encoded null. The trade-off is accepted and documented:
 // a stored string exactly equal to NULL_MARKER reads back as null (in practice only if data
 // deliberately contains the marker itself).
-export const toNullMarker = deepNullMarker(
-  () => NULL_MARKER,
-  (v) => v === null
-);
+export const toNullMarker = <T>(value: T): T =>
+  (value === null ? NULL_MARKER : value) as T;
 
-export const fromNullMarker = deepNullMarker(
-  () => null,
-  (v) => v === NULL_MARKER
-);
+export const fromNullMarker = <T>(value: T): T =>
+  (value === NULL_MARKER ? null : value) as T;
 
 type SliceParams = {
   limit?: number | undefined;

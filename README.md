@@ -44,11 +44,13 @@ pnpm check:fix  # applies Biome fixes
 
 ## Known limitations
 
-- **Null handling**: AceBase drops raw `null` values (and rejects arrays containing
-  them), so the adapter encodes nulls as the sentinel string
+- **Null handling**: AceBase drops raw `null` values, so the adapter encodes
+  field-level nulls as the sentinel string
   `__acebase_null__:v2:1fc8c21f5a3f015e455c7379d0c42e6c` on write and decodes them
-  back on read. The random-looking suffix is fixed on purpose, so accidental
-  collisions with real data are practically impossible. The encoding is deliberately
+  back on read. JSON and array fields are declared unsupported so Better Auth
+  serializes them before adapter transforms run, preserving their nested nulls.
+  The random-looking suffix is fixed on purpose, so accidental collisions with
+  real data are practically impossible. The encoding is deliberately
   idempotent:
   better-auth's factory applies `customTransformInput` to where-clause values
   unconditionally, and stacked adapter factories apply it again — so a value may be

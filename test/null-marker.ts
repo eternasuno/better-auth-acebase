@@ -5,11 +5,14 @@ import { extendedUserModelOptions } from './options';
 
 const PROFILE_LEVEL_CREATED = 3;
 const PROFILE_LEVEL_UPDATED = 2;
+const CREATED_PROFILE = {
+  bio: null,
+  level: PROFILE_LEVEL_CREATED,
+  marker: NULL_MARKER,
+};
 
-// Regression: AceBase drops null values and rejects arrays containing them.
-// The adapter encodes nulls as a sentinel string on write and decodes them on
-// read; that encoding must reach values nested inside json fields and arrays,
-// not just top-level columns.
+// Better Auth serializes JSON fields and arrays because the adapter declares them unsupported.
+// Nested nulls therefore reach AceBase inside strings and survive without marker traversal.
 export const nestedNullValuesRoundTripTestSuite = createTestSuite(
   'AceBase nested null values survive a round trip',
   { defaultBetterAuthOptions: extendedUserModelOptions },
@@ -19,8 +22,8 @@ export const nestedNullValuesRoundTripTestSuite = createTestSuite(
         model: 'user',
         data: {
           ...(await generate('user')),
-          profile: { bio: null, level: PROFILE_LEVEL_CREATED },
-          tags: ['admin', null],
+          profile: CREATED_PROFILE,
+          tags: ['admin', null, NULL_MARKER],
         },
         forceAllowId: true,
       });
@@ -32,11 +35,8 @@ export const nestedNullValuesRoundTripTestSuite = createTestSuite(
         | ({ profile?: unknown; tags?: unknown } & Record<string, unknown>)
         | null;
 
-      expect(found?.profile).toEqual({
-        bio: null,
-        level: PROFILE_LEVEL_CREATED,
-      });
-      expect(found?.tags).toEqual(['admin', null]);
+      expect(found?.profile).toEqual(CREATED_PROFILE);
+      expect(found?.tags).toEqual(['admin', null, NULL_MARKER]);
     },
     'update keeps nulls nested inside json fields and arrays': async () => {
       const created = await adapter.create<{ id: string }>({

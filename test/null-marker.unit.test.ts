@@ -3,11 +3,8 @@ import { fromNullMarker, NULL_MARKER, toNullMarker } from '../src/utils';
 
 const SAMPLE_NUMBER = 3;
 
-// Unit-level pin on the null-marker encoding. The mapping is intentionally NOT collision-free:
-// it must be idempotent because better-auth's factory may apply customTransformInput to the
-// same value more than once (stacked factories re-transform where clauses), and idempotence
-// plus a total decode makes any escaping scheme impossible. Round trips therefore preserve
-// every value EXCEPT strings exactly equal to the sentinel, which read back as null.
+// The field-level mapping must remain idempotent because stacked Better Auth factories can
+// transform where values more than once. JSON and arrays are serialized before it runs.
 describe('null marker encoding', () => {
   const roundTrip = (value: unknown) => fromNullMarker(toNullMarker(value));
 
@@ -30,14 +27,14 @@ describe('null marker encoding', () => {
     }
   });
 
-  it('round trips every value except the literal sentinel', () => {
+  it('only transforms field-level nulls and markers', () => {
     const lossless = [
       `${NULL_MARKER}x`,
       '',
       'plain',
       SAMPLE_NUMBER,
       [`${NULL_MARKER}x`, null],
-      { a: { b: null } },
+      { a: { b: null }, marker: NULL_MARKER },
     ];
     for (const input of lossless) {
       expect(roundTrip(input)).toEqual(input);
