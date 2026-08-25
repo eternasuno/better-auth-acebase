@@ -1,50 +1,45 @@
 import type { AceBase } from 'acebase';
 import type { CleanedWhere, WhereOperator } from 'better-auth/adapters';
 
-type DataReferenceQuery = ReturnType<AceBase['query']>;
-
-export type { DataReferenceQuery };
+export type DataReferenceQuery = ReturnType<AceBase['query']>;
 
 type FilterParams = Parameters<DataReferenceQuery['filter']>;
 
 type ToFilterParams = (where: CleanedWhere) => FilterParams;
 
-type WhereOp =
-  | { sensitive: ToFilterParams; insensitive: ToFilterParams }
-  | ToFilterParams;
-
-const escapeRegExp = (str: string): string => {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+type WhereOp = {
+  sensitive: ToFilterParams;
+  insensitive: ToFilterParams;
 };
 
 const insensitiveContains: ToFilterParams = ({ field, value }) => [
   field,
   'matches',
-  new RegExp(escapeRegExp(String(value)), 'i'),
+  new RegExp(RegExp.escape(String(value)), 'i'),
 ];
 
 const sensitiveContains: ToFilterParams = ({ field, value }) => [
   field,
   'matches',
-  new RegExp(escapeRegExp(String(value))),
+  new RegExp(RegExp.escape(String(value))),
 ];
 
 const insensitiveEndsWith: ToFilterParams = ({ field, value }) => [
   field,
   'matches',
-  new RegExp(`${escapeRegExp(String(value))}$`, 'i'),
+  new RegExp(`${RegExp.escape(String(value))}$`, 'i'),
 ];
 
 const sensitiveEndsWith: ToFilterParams = ({ field, value }) => [
   field,
   'matches',
-  new RegExp(`${escapeRegExp(String(value))}$`),
+  new RegExp(`${RegExp.escape(String(value))}$`),
 ];
 
 const insensitiveEq: ToFilterParams = ({ field, value }) => [
   field,
   'matches',
-  new RegExp(`^${escapeRegExp(String(value))}$`, 'i'),
+  new RegExp(`^${RegExp.escape(String(value))}$`, 'i'),
 ];
 
 const sensitiveEq: ToFilterParams = ({ field, value }) => [field, '==', value];
@@ -52,12 +47,12 @@ const sensitiveEq: ToFilterParams = ({ field, value }) => [field, '==', value];
 const insensitiveNe: ToFilterParams = ({ field, value }) => [
   field,
   '!matches',
-  new RegExp(`^${escapeRegExp(String(value))}$`, 'i'),
+  new RegExp(`^${RegExp.escape(String(value))}$`, 'i'),
 ];
 
 const sensitiveNe: ToFilterParams = ({ field, value }) => [field, '!=', value];
 
-// gt, gte, lt, lte, in, not_in behave identically in both modes — single shared handler
+// Range operators behave identically in both modes.
 const gt: ToFilterParams = ({ field, value }) => [field, '>', value];
 const gte: ToFilterParams = ({ field, value }) => [field, '>=', value];
 const lt: ToFilterParams = ({ field, value }) => [field, '<', value];
@@ -70,7 +65,7 @@ const notIn: ToFilterParams = ({ field, value }) => [field, '!in', value];
 const toAlternation = (values: ReadonlyArray<unknown>) =>
   values.length === 0
     ? '(?!)'
-    : values.map((value) => escapeRegExp(String(value))).join('|');
+    : values.map((value) => RegExp.escape(String(value))).join('|');
 
 const insensitiveIn: ToFilterParams = ({ field, value }) => [
   field,
@@ -87,24 +82,24 @@ const insensitiveNotIn: ToFilterParams = ({ field, value }) => [
 const insensitiveStartsWith: ToFilterParams = ({ field, value }) => [
   field,
   'matches',
-  new RegExp(`^${escapeRegExp(String(value))}`, 'i'),
+  new RegExp(`^${RegExp.escape(String(value))}`, 'i'),
 ];
 
 const sensitiveStartsWith: ToFilterParams = ({ field, value }) => [
   field,
   'matches',
-  new RegExp(`^${escapeRegExp(String(value))}`),
+  new RegExp(`^${RegExp.escape(String(value))}`),
 ];
 
 const FILTERS_TABLE: Record<WhereOperator, WhereOp> = {
   contains: { insensitive: insensitiveContains, sensitive: sensitiveContains },
   ends_with: { insensitive: insensitiveEndsWith, sensitive: sensitiveEndsWith },
   eq: { insensitive: insensitiveEq, sensitive: sensitiveEq },
-  gt,
-  gte,
+  gt: { insensitive: gt, sensitive: gt },
+  gte: { insensitive: gte, sensitive: gte },
   in: { insensitive: insensitiveIn, sensitive: opIn },
-  lt,
-  lte,
+  lt: { insensitive: lt, sensitive: lt },
+  lte: { insensitive: lte, sensitive: lte },
   ne: { insensitive: insensitiveNe, sensitive: sensitiveNe },
   not_in: { insensitive: insensitiveNotIn, sensitive: notIn },
   starts_with: {
@@ -123,8 +118,7 @@ const resolveFilterHandler = ({
   if (operator === undefined || mode === undefined) {
     return undefined;
   }
-  const op = FILTERS_TABLE[operator];
-  return typeof op === 'function' ? op : op[mode];
+  return FILTERS_TABLE[operator][mode];
 };
 
 const toFilterParams = (where: CleanedWhere): FilterParams => {
@@ -170,12 +164,9 @@ export const orGroupCount = (where?: ReadonlyArray<CleanedWhere>): number =>
 export const buildQuery =
   (db: AceBase) =>
   (model: string) =>
-  (
-    where?: ReadonlyArray<CleanedWhere>,
-    take: number = TAKE_ALL
-  ): ReadonlyArray<DataReferenceQuery> =>
+  (where?: ReadonlyArray<CleanedWhere>): ReadonlyArray<DataReferenceQuery> =>
     where?.length
       ? toFilterParamsGroups(where).map((g) =>
-          g.reduce((q, p) => q.filter(...p), db.query(model).take(take))
+          g.reduce((q, p) => q.filter(...p), db.query(model))
         )
-      : [db.query(model).take(take)];
+      : [db.query(model)];

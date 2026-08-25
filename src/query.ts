@@ -1,12 +1,11 @@
 import type { AceBase } from 'acebase';
 import type { CleanedWhere, JoinConfig, Where } from 'better-auth/adapters';
-import { applyJoin, type CreatorConfig } from './join.ts';
+import { applyJoin } from './join.ts';
+import { applySort, type SnapshotEntry, type SortBy } from './sort.ts';
 import {
   applySelect,
   applySlice,
-  applySort,
-  type SnapshotEntry,
-  type SortBy,
+  type CreatorConfig,
   type Value,
 } from './utils.ts';
 import {
@@ -40,12 +39,13 @@ const fetchSnapshotEntries = async (
   }));
 };
 
-const fetchAllEntries = (
+const fetchAllEntries = async (
   queries: ReadonlyArray<DataReferenceQuery>
-): Promise<Array<SnapshotEntry>> =>
-  Promise.all(queries.map(fetchSnapshotEntries)).then((groups) =>
-    groups.flat()
-  );
+): Promise<Array<SnapshotEntry>> => {
+  const groups = await Promise.all(queries.map(fetchSnapshotEntries));
+
+  return groups.flat();
+};
 
 // OR groups can return the same row; keep the first occurrence per record path.
 // The path is the storage identity — record ids may be missing or remapped, so
@@ -59,6 +59,7 @@ const dedupeByPath = (
     if (seen.has(path)) {
       return false;
     }
+
     seen.add(path);
 
     return true;
@@ -70,6 +71,9 @@ type WindowParams = {
   offset?: number | undefined;
   sortBy?: SortBy | undefined;
 };
+
+const withTakeAll = (query: DataReferenceQuery): DataReferenceQuery =>
+  query.take(TAKE_ALL);
 
 // Sort/skip/take pushdown for a single OR group.
 const withNativeWindow =
@@ -100,8 +104,8 @@ type MergeParams = WindowParams & {
 
 // Overlapping OR groups require complete result sets, so their snapshots are merged
 // in memory: path-dedupe -> sort (native semantics, ties broken by path) -> slice ->
-// join -> select. Sorting with native semantics keeps this path's order identical to
-// a single-group query, which AceBase sorts natively.
+// join -> select. Sorting with native semantics keeps this path's order identical to a
+// single-group query, which AceBase sorts natively.
 const mergeOrGroupSnapshots =
   (db: AceBase) =>
   async (
@@ -111,6 +115,7 @@ const mergeOrGroupSnapshots =
     const sorted = applySort(sortBy)(
       dedupeByPath(await fetchAllEntries(queries))
     );
+
     const sliced = applySlice({ limit, offset })(sorted);
     const joined = await applyJoin(db)({ creatorConfig, joinConfig: join })(
       sliced.map((entry) => entry.value)
@@ -138,7 +143,7 @@ export const findMany =
     // Sort/skip/take are pushed down natively only for a single OR group: overlapping OR groups
     // require path-deduplication across complete result sets, and ordering across separately
     // fetched groups is undefined, so multiple groups must be merged and sliced in memory.
-    const queries = buildQuery(db)(model)(where);
+    const queries = buildQuery(db)(model)(where).map(withTakeAll);
     const singleQuery = queries.at(0);
     if (!singleQuery) {
       return [];
@@ -181,9 +186,10 @@ export const findOne =
     // globally-first match may belong to any group, so the multi-group path must still fetch
     // everything and dedupe before picking the first row.
     const take = orGroupCount(where) <= 1 ? 1 : TAKE_ALL;
-    const results = dedupeByPath(
-      await fetchAllEntries(buildQuery(db)(model)(where, take))
+    const queries = buildQuery(db)(model)(where).map((query) =>
+      query.take(take)
     );
+    const results = dedupeByPath(await fetchAllEntries(queries));
     const first = results.at(0)?.value;
     if (first && join) {
       const joined = await applyJoin(db)({ creatorConfig, joinConfig: join })([
@@ -204,7 +210,7 @@ type CountParams = {
 export const count =
   (db: AceBase) =>
   async ({ model, where }: CountParams) => {
-    const queries = buildQuery(db)(model)(where);
+    const queries = buildQuery(db)(model)(where).map(withTakeAll);
     if (queries.length <= 1) {
       // Single group: native count is exact and avoids loading any data.
       const counts = await Promise.all(queries.map((q) => q.count()));

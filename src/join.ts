@@ -1,10 +1,6 @@
 import type { AceBase } from 'acebase';
 import type { JoinConfig } from 'better-auth';
-import type { AdapterFactoryCustomizeAdapterCreator } from 'better-auth/adapters';
-import type { Value } from './utils.ts';
-
-export type CreatorConfig =
-  Parameters<AdapterFactoryCustomizeAdapterCreator>[0];
+import type { CreatorConfig, Value } from './utils.ts';
 
 type JoinParams = {
   creatorConfig: CreatorConfig;
@@ -42,7 +38,7 @@ const fetchByKey =
 const foreignKeysOf =
   <T extends Value>(values: Array<T>) =>
   (config: JoinConfig[string]) =>
-    [...new Set(values.map((v) => v[config.on.from]))].filter(
+    [...new Set(values.map((value) => value[config.on.from]))].filter(
       (key) => key !== undefined && key !== null
     );
 
@@ -65,19 +61,19 @@ const merge =
   <T extends Value>(values: Array<T>) =>
   (joinValues: Array<Value>) => {
     const joinMap = new Map<string, Array<Value>>();
-    for (const jv of joinValues) {
-      const key = jv[config.on.to] as string;
+    for (const joinValue of joinValues) {
+      const key = joinValue[config.on.to] as string;
       const value = joinMap.get(key) ?? [];
-      value.push(jv);
+      value.push(joinValue);
       joinMap.set(key, value);
     }
 
-    return values.map((v) => {
-      const valueArr = joinMap.get(v[config.on.from] as string) ?? [];
+    return values.map((value) => {
+      const valueArr = joinMap.get(value[config.on.from] as string) ?? [];
 
       return config.relation === 'one-to-one' && valueArr.length > 0
-        ? { ...v, [model]: valueArr[0] }
-        : { ...v, [model]: valueArr };
+        ? { ...value, [model]: valueArr[0] }
+        : { ...value, [model]: valueArr };
     });
   };
 

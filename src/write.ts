@@ -2,10 +2,9 @@ import type { AceBase } from 'acebase';
 import type { BetterAuthDBSchema } from 'better-auth';
 import type { CleanedWhere } from 'better-auth/adapters';
 import { createIndexesFromSchema } from './create-index.ts';
-import type { CreatorConfig } from './join.ts';
 import { findOne } from './query.ts';
-import type { Value } from './utils.ts';
-import { buildQuery, type DataReferenceQuery } from './where.ts';
+import type { CreatorConfig, Value } from './utils.ts';
+import { buildQuery, type DataReferenceQuery, TAKE_ALL } from './where.ts';
 
 type CreateParams<T extends Value = Value> = {
   model: string;
@@ -74,7 +73,9 @@ export const settleBulkOperations = async (
 export const removeMany =
   (db: AceBase) =>
   async ({ model, where }: RemoveParams) => {
-    const refs = await findDistinctRefs(buildQuery(db)(model)(where));
+    const refs = await findDistinctRefs(
+      buildQuery(db)(model)(where).map((query) => query.take(TAKE_ALL))
+    );
 
     return settleBulkOperations(refs.map((ref) => ref.remove()));
   };
@@ -106,7 +107,9 @@ export const update =
 export const updateMany =
   (db: AceBase) =>
   async ({ model, where, update }: UpdateParams): Promise<number> => {
-    const refs = await findDistinctRefs(buildQuery(db)(model)(where));
+    const refs = await findDistinctRefs(
+      buildQuery(db)(model)(where).map((query) => query.take(TAKE_ALL))
+    );
 
     return settleBulkOperations(
       refs.map((ref) => ref.update(update as Record<string, unknown>))

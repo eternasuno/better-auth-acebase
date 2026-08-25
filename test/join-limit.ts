@@ -2,19 +2,8 @@ import { createTestSuite } from '@better-auth/test-utils/adapter';
 import { expect } from 'vitest';
 
 const JOIN_LIMIT = 105;
-// Small on purpose: with a shared global take() across parents, the second
-// parent would lose rows to the first; per-key limits must give each parent
-// its full quota.
 const MULTI_PARENT_LIMIT = 3;
 
-// better-auth's adapter factory injects a numeric limit into every join config
-// (defaultFindManyLimit ?? 100; 1 for one-to-one), so an unset limit can never
-// be observed from adapter code. What the adapter controls is honoring the
-// limit it *is* given: verify an explicitly raised join limit is passed through
-// to AceBase's take() and that all matching children reach the merged result.
-//
-// experimental.joins routes join results through the adapter; without it the
-// core falls back to its own per-parent queries and never calls adapter code.
 type TestHelpers = Parameters<Parameters<typeof createTestSuite>[2]>[0];
 
 const createUser = async ({ adapter, generate }: TestHelpers) =>
@@ -73,9 +62,6 @@ const eachParentReceivesItsOwnLimit = async (helpers: TestHelpers) => {
   }
 };
 
-// AceBase's take(0) means unlimited, but better-auth semantics demand zero
-// joined children; the adapter must short-circuit instead of querying.
-// Covers a parent that has children and a childless one in the same query.
 const limitZeroJoinsNoChildren = async (helpers: TestHelpers) => {
   const [withChildren, childless] = await Promise.all([
     createUser(helpers),

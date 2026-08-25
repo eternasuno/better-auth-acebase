@@ -1,6 +1,6 @@
 import type { AceBase } from 'acebase';
 import type { BetterAuthDBSchema } from 'better-auth';
-import type { CreatorConfig } from './join.ts';
+import type { CreatorConfig } from './utils.ts';
 
 const fieldIterator = function* (schema: BetterAuthDBSchema) {
   for (const [modelKey, modelSchema] of Object.entries(schema)) {
