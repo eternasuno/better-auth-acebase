@@ -1,28 +1,72 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "files": {
     "ignoreUnknown": true
   },
-  "linter": {
-    "rules": {
-      "preset": "recommended",
-      "nursery": {
-        "noFloatingPromises": "error",
-        "noMisusedPromises": "error",
-        "useSortedClasses": "error"
-      }
-    }
-  },
   "formatter": {
-    "indentWidth": 2,
     "indentStyle": "space",
-    "lineWidth": 98
+    "indentWidth": 2,
+    "lineWidth": 80
   },
   "javascript": {
     "formatter": {
       "quoteStyle": "single",
       "semicolons": "always",
       "trailingCommas": "es5"
+    }
+  },
+  "linter": {
+    "rules": {
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": {
+            "maxAllowedComplexity": 10
+          }
+        },
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": {
+            "maxLines": 40,
+            "skipBlankLines": true
+          }
+        }
+      },
+      "correctness": {
+        "noUndeclaredDependencies": "error"
+      },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error"
+      },
+      "performance": {
+        "noAccumulatingSpread": "error"
+      },
+      "preset": "recommended",
+      "style": {
+        "noDefaultExport": "error",
+        "noExcessiveLinesPerFile": {
+          "level": "error",
+          "options": {
+            "maxLines": 300,
+            "skipBlankLines": true
+          }
+        },
+        "noExportedImports": "error",
+        "noMagicNumbers": "warn",
+        "noNestedTernary": "error",
+        "noParameterAssign": {
+          "level": "error",
+          "options": {
+            "propertyAssignment": "deny"
+          }
+        },
+        "noUselessElse": "error",
+        "useReadonlyClassProperties": "error"
+      },
+      "suspicious": {
+        "noVar": "error"
+      }
     }
   },
   "vcs": {

@@ -38,8 +38,37 @@ export const auth = betterAuth({
 pnpm install
 pnpm build  # tsc -> dist/ (compiled ESM + types)
 pnpm test   # runs better-auth adapter test suite
-pnpm check  # tsc --noEmit + biome check
+pnpm check      # tsc --noEmit + biome check
+pnpm check:fix  # applies Biome fixes
 ```
+
+## Known limitations
+
+- **Null handling**: AceBase drops raw `null` values, so the adapter encodes
+  field-level nulls as the sentinel string
+  `__acebase_null__:v2:1fc8c21f5a3f015e455c7379d0c42e6c` on write and decodes them
+  back on read. JSON and array fields are declared unsupported so Better Auth
+  serializes them before adapter transforms run, preserving their nested nulls.
+  The random-looking suffix is fixed on purpose, so accidental collisions with
+  real data are practically impossible. The encoding is deliberately
+  idempotent:
+  better-auth's factory applies `customTransformInput` to where-clause values
+  unconditionally, and stacked adapter factories apply it again — so a value may be
+  encoded more than once. That rules out collision-proof escaping schemes: a stored
+  string exactly equal to the sentinel reads back as `null` (theoretical risk,
+  accepted and documented).
+- **Query strategy**: filters are translated into AceBase queries. Single OR-group
+  queries push sorting and pagination down to AceBase, while counts use its native
+  count operation. Multiple OR groups run as parallel queries over their complete
+  matching sets, then merge, deduplicate, sort, and paginate in memory. Queries use
+  an explicit `TAKE_ALL = Number.MAX_SAFE_INTEGER` where needed to avoid AceBase's
+  implicit 100-row limit.
+- **Case sensitivity**: indexes are created with `caseSensitive: true`, so
+  `eq`/`in`/`not_in` behave case-sensitively by default; better-auth's insensitive
+  mode is implemented via case-insensitive regex matches instead.
+- **Join limits**: join results are capped by better-auth itself — the adapter
+  factory always injects a numeric limit into every join config
+  (`defaultFindManyLimit ?? 100`, or `1` for one-to-one), regardless of adapter behavior.
 
 ## License
 

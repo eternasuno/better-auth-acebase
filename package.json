@@ -17,6 +17,9 @@
     "dist"
   ],
   "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eternasuno/better-auth-acebase.git"
@@ -29,7 +32,7 @@
     "better-auth": "^1.6.23"
   },
   "devDependencies": {
-    "@better-auth/test-utils": "^1.6.23",
+    "@better-auth/test-utils": "^1.7.2",
     "@biomejs/biome": "^2.5.10",
     "@types/node": "^26.2.0",
     "typescript": "^7.0.2",
@@ -37,8 +40,9 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "check": "tsc --noEmit && biome check --write",
+    "check": "tsc --noEmit && biome check",
+    "check:fix": "biome check --write",
     "prepublishOnly": "pnpm build",
-    "test": "vitest run"
+    "test": "vitest run --dir test"
   }
 }

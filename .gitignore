@@ -1,3 +1,40 @@
+# Reference repositories
+/.slim/
+
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml
+
+# TypeScript / Node
 node_modules/
-dist/
-*.log
+
+# Turbo
+.turbo/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+
+# MacOS
+.DS_Store
+
+# pnpm store
+.pnpm-store/
+
+# build output
+dist
+build
+
+# tsbuildinfo
+tsconfig.tsbuildinfo
