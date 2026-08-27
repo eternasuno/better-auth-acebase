@@ -1,53 +1,44 @@
 # AGENTS.md
 
-## What this is
+## Scope
 
-AceBase adapter for better-auth. Single small TS library, no monorepo, no framework.
+AceBase adapter for better-auth. Single TypeScript library; no monorepo or
+framework.
 
-## Git workflow
+## Workflow
 
-`main` is branch-protected: direct pushes (including admins) are rejected — all changes go through a PR (`git push` a feature branch, then `gh pr create`). Tags are unaffected and drive the npm publish workflow.
+- `main` is branch-protected. Work on a feature branch and open a PR. Version
+  tags drive npm publishing.
+- For source changes, run `pnpm check`, `pnpm test`, and `pnpm build`. Tests use
+  raw TypeScript and do not verify emitted `dist` files.
+- Keep Vitest scoped to `test/`; otherwise it may scan ignored reference clones
+  under `.slim/`.
+- Tests use a real temporary AceBase database, not mocks.
+- Register custom adapter suites after the official harness suites; their shared
+  options would otherwise leak into official suites.
 
-## Build step
+## Conventions
 
-The package compiles to `dist/` via `pnpm build` (`tsc -p tsconfig.build.json`). Development config is the plain `tsconfig.json` (covers `src/` + `test/`, `noEmit` — this is what VSCode's TS server picks up, one project for all files); `tsconfig.build.json` extends it with emit settings (`rootDir: "src"`, `outDir: "dist"`, declarations) and includes only `src/`, so output lands directly in `dist/` (no `dist/src/`, no test artifacts). Key detail: source uses `.ts` extension on relative imports (`./query.ts`), and `rewriteRelativeImportExtensions` rewrites them to `.js` in the output — required for Node ESM to resolve. `tsconfig.json` sets `allowImportingTsExtensions` for this.
+- Biome and TypeScript configuration are authoritative. Fix violations without
+  relaxing their rules or limits.
+- Write comments and log messages in English.
+- For TypeScript implementation or review, load `writing-lean-typescript`.
 
-Published artifacts: `exports`/`types`/`files` all point at `dist/` (`./dist/adapter.js` + `.d.ts`). Tests run against raw TS via vitest, so `pnpm test`/`pnpm check` never touch `dist` — run `pnpm build` to verify emit. Publishing happens through `.github/workflows/publish.yml` (tag `v*` → build + test + publish to npm via Trusted Publishing / OIDC, `id-token: write` permission; no token secret). PR CI lives in `.github/workflows/ci.yml` (check → test → build).
+## Adapter invariants
 
-## Commands
-
-- `pnpm build` — `tsc -p tsconfig.build.json` → `dist/` (compiled ESM + `.d.ts`; `dist/` gitignored). Run it after changing source; both CI workflows run it too.
-- `pnpm check` — `tsc --noEmit && biome check`. The first tsc typechecks both `src/` and `test/` (vitest transpiles but never typechecks) via the single dev `tsconfig.json`. This command is read-only and fails on formatting issues. Use `pnpm check:fix` to apply Biome fixes.
-- `pnpm test` — `vitest run`. Runs the full better-auth adapter suite (158 tests, ~14s) against a **real AceBase instance** created in a temp dir (`test/adapter.test.ts` via `mkdtemp`). Integration-level, not mocked. Composition: official `testAdapter` harness suites from `@better-auth/test-utils` (`normalTestSuite`, `authFlowTestSuite`, `caseInsensitiveTestSuite`), local `createTestSuite` suites (`unfilteredCountTestSuite` — count > `defaultFindManyLimit` 100, `caseSensitivePatternOperatorsTestSuite`, `patternInsensitiveAndWildcardTestSuite`, `overlappingOrGroupsDeduplicationTestSuite`, `nestedNullValuesRoundTripTestSuite`, `joinExplicitLimitTestSuite`, `sentinelAmbiguityTestSuite`), a standalone `usePlural: true` describe block in `adapter.test.ts`, and unit-level null-marker pins in `null-marker.unit.test.ts`. Suite factories live in their own modules (not `*.test.ts`) because Biome forbids exports from test files. Custom suites MUST stay registered AFTER the official ones — their options merge into the shared harness and would leak into official suites otherwise.
-
-## Code style
-
-Style is enforced by biome (single quotes, semicolons always, 2-space indent, line width 80). On top of the `recommended` preset, the config enforces: promise hygiene (`noFloatingPromises`, `noMisusedPromises`), size budgets (cognitive complexity ≤ 10, ≤ 40 lines per function, ≤ 300 lines per file, blank lines excluded), `noUndeclaredDependencies`, immutable accumulation (`noAccumulatingSpread`), and readonly class fields. `noExplicitAny` remains on via `recommended` — adapter methods are typed with generics (`<T = Value>`), not `any`.
-
-All comments and log messages must be written in English.
-
-Code style principles:
-
-- Size budgets are hard lint limits. When a function or file exceeds them, split it or extract helpers/data-driven maps — do not raise the limits.
-- Name things meaningfully: variables and functions state what they compute, files state what they own (`where.ts`, `join.ts`). No single-letter names outside trivial scopes (loop indices, tiny callbacks).
-- Comments explain WHY a decision, constraint, or workaround exists — never narrate WHAT the code does. Keep them rare and short; if code needs a long comment, simplify the code first.
-- Prefer immutable transformations (spread/concat/map/filter) over mutating accumulators or in-place edits; no assignment inside expressions.
-
-## Architecture / file ownership
-
-Entry point: `src/adapter.ts` exports `acebaseAdapter(config)`; config sets adapter capabilities (`supportsDates: false`, `supportsArrays: true`, `supportsJSON: true`, `supportsNumericIds: false`, `supportsUUIDs: false`, `transaction: false`, `usePlural`, `debugLogs`). The `customTransformInput`/`customTransformOutput` hooks there do the null-marker encoding (see Gotchas).
-
-- `src/where.ts` — translates better-auth operators into AceBase query filters. OR-clauses are split into separate groups (`splitByOrClause`); comparisons are `>`/`>=`/`<`/`<=`/`in`/`!in`/`==`/`!=`, strings always use `matches` regexes with escaped literals (never `like`), case-sensitivity handled by dedicated handlers. Exports `TAKE_ALL` and `orGroupCount`; `buildQuery(db)(model)(where, take = TAKE_ALL)` builds one query per OR group.
-- `src/query.ts` — `findMany`/`findOne`/`count`. Single OR-group queries push `sort`/`skip`/`take` down natively to AceBase (no dedupe needed); multiple groups run as parallel queries merged in memory (id-dedupe → sort → slice → join → select), because overlapping groups require complete result sets. `findOne` passes `take(1)` only when `orGroupCount(where) <= 1` — the globally-first match may belong to any group. `count` uses native `q.count()` for single groups; multi-group counts via id-deduplicated snapshots.
-- `src/write.ts` — `create`/`update`/`updateMany`/`remove`/`removeMany`/`createSchema`. `updateMany` returns the number of successfully updated records (`Promise.allSettled` fulfilled-count, mirroring `removeMany`). `createSchema` delegates index creation to `src/create-index.ts`; failures propagate (AceBase's `indexes.create` is idempotent for existing indexes, so hard-failing is safe).
-- `src/create-index.ts` — creates AceBase indexes for schema fields marked `index`/`unique`, always with `caseSensitive: true` (see Gotchas).
-- `src/join.ts` — relation joins (`one-to-one` vs one-to-many), merges by foreign key. Executes `.take(config.limit)` directly — better-auth always injects a numeric limit into join configs (see Gotchas), so a `?? fallback` would be dead code.
-- `src/utils.ts` — shared post-processing: sort/slice/select plus deep null-marker helpers (`toNullMarker`/`fromNullMarker` recurse into plain objects/arrays). `applySort` defines a total order: missing/NaN values sort last regardless of direction, otherwise type-rank partitioning (number < string < boolean < other). `applySelect` omits unselected keys entirely instead of writing undefined-valued entries (`applySlice` has no default limit — `undefined` means no slicing).
-
-## Gotchas
-
-- **AceBase drops `null` values** (verified: `set({a: null, ...})` reads back without the key), so `null` is encoded as the sentinel string `'__acebase_null__:v2:1fc8c21f5a3f015e455c7379d0c42e6c'` (`NULL_MARKER` in `src/utils.ts`; the random-looking suffix is fixed on purpose so real data never collides with it) via better-auth's `customTransformInput`/`customTransformOutput` hooks in `src/adapter.ts`. The factory applies them to every field on writes, reads, where-clauses, and joins — never write raw `null` into records. The mapping is deliberately idempotent (`toNullMarker(toNullMarker(v)) === toNullMarker(v)`): better-auth's factory runs the input transform over where-clause values unconditionally, and stacked factories apply it again (`@better-auth/test-utils` wraps the real adapter in an outer factory whose `disableTransformInput` exempts data but not where clauses), so a value may be encoded more than once. Idempotence rules out collision-proof escaping — a stored string exactly equal to the sentinel decodes back as `null` (accepted, documented in README; pinned by `sentinelAmbiguityTestSuite`).
-- **AceBase defaults filtered-less queries to `take: 100`** — but only when a query has *neither* filters *nor* an explicit take (verified in acebase's query runner). Queries here always set `take(TAKE_ALL)` (`TAKE_ALL = Number.MAX_SAFE_INTEGER`, `src/where.ts`) to keep every path uniform; slice/paginate happens in memory except where pushed down (see `src/query.ts`).
-- **better-auth's core ALWAYS injects a numeric `limit` into every join config** before adapters see it (`defaultFindManyLimit ?? 100`; forced to `1` for one-to-one/unique FK; overridden only by an explicit user `{ model: { limit } }` — `@better-auth/core` `factory.ts`). Consequences: `config.limit ?? X` in join handling is dead code (`src/join.ts` therefore uses `.take(config.limit as number)`; the cast is needed because the public `JoinConfig` type keeps `limit` optional while runtime always sets it), and a test asserting >100 joined rows WITHOUT an explicit limit fails **by design**. The meaningful assertion is that an explicitly raised limit is honored end-to-end (`joinExplicitLimitTestSuite`: `join: { session: { limit: 105 } }` → 105 rows).
-- **Indexes are created with `caseSensitive: true`** (`src/create-index.ts`): AceBase lowercases indexed string values by default, which silently made sensitive `eq`/`in`/`not_in` case-insensitive on indexed fields (email is unique-indexed). With sensitive indexes restored, better-auth's insensitive mode is implemented via case-insensitive `matches` regexes instead (`src/where.ts`), including regex alternations for `insensitive in`/`not_in`.
-- `supportsDates: false` is **required**, not a nice-to-have: verified that AceBase's query engine `==` filter never matches `Date` values (its `>`/`>=` range filters do work, but `==` returns 0 hits even for identical timestamps). So dates must stay as ISO strings via better-auth — flipping `supportsDates` to `true` breaks `findOne`/`where eq` on date fields (test: `findOne - should find model with date field`).
+- AceBase drops `null`. Every write, read, where clause, and join must use the
+  shared null-marker transforms. Encoding stays idempotent because stacked
+  better-auth factories may transform values repeatedly. The exact sentinel
+  lives only in `src/utils.ts`; a matching user string intentionally decodes as
+  `null`.
+- An AceBase query without filters or an explicit take defaults to 100 rows.
+  Use the shared `TAKE_ALL` for unbounded paths.
+- Multiple OR groups require complete group results and global ID deduplication
+  before sorting, slicing, joining, selecting, or counting.
+- better-auth injects a numeric join limit at runtime. Use it directly; the
+  public optional type does not justify a fallback.
+- AceBase indexes remain `caseSensitive: true`. Insensitive matching belongs in
+  query translation; changing index sensitivity breaks sensitive equality and
+  membership filters.
+- Keep `supportsDates: false`: AceBase equality does not reliably match `Date`
+  values, so better-auth must store ISO strings.

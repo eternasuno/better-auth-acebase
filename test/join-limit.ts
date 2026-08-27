@@ -89,7 +89,7 @@ const limitZeroJoinsNoChildren = async (helpers: TestHelpers) => {
 
 export const joinExplicitLimitTestSuite = createTestSuite(
   'AceBase join honors an explicit join limit',
-  { defaultBetterAuthOptions: { experimental: { joins: true } } },
+  { defaultBetterAuthOptions: {} },
   (helpers) => ({
     'findMany join returns every child row up to the explicit join limit': () =>
       explicitLimitJoinsAllChildren(helpers),

@@ -51,6 +51,7 @@ export const caseSensitivePatternOperatorsTestSuite = createTestSuite(
         data: { ...(await generate('user')), name: SENSITIVE_NAME },
         forceAllowId: true,
       });
+
       await insertRandom('user', RANDOM_FILL_ROWS);
 
       const matches = (await adapter.findMany({
@@ -91,6 +92,7 @@ const expectSingleMatch = async (
     data: { ...(await generate('user')), name: seededName },
     forceAllowId: true,
   });
+
   await insertRandom('user', RANDOM_FILL_ROWS);
   const matches = (await adapter.findMany({
     model: 'user',
@@ -283,11 +285,13 @@ export const findManyLimitZeroTestSuite = createTestSuite(
         data: { ...(await generate('user')), name: 'LimitZero', age: 0 },
         forceAllowId: true,
       });
+
       const native = await adapter.findMany({
         model: 'user',
         where: limitZeroWhere.slice(0, 1),
         limit: 0,
       });
+
       const merged = await adapter.findMany({
         model: 'user',
         where: limitZeroWhere,

@@ -11,8 +11,7 @@ const CREATED_PROFILE = {
   marker: NULL_MARKER,
 };
 
-// Better Auth serializes JSON fields and arrays because the adapter declares them unsupported.
-// Nested nulls therefore reach AceBase inside strings and survive without marker traversal.
+// better-auth serializes JSON fields and arrays, so nested nulls reach AceBase inside strings.
 export const nestedNullValuesRoundTripTestSuite = createTestSuite(
   'AceBase nested null values survive a round trip',
   { defaultBetterAuthOptions: extendedUserModelOptions },
@@ -69,15 +68,12 @@ export const nestedNullValuesRoundTripTestSuite = createTestSuite(
         bio: null,
         level: PROFILE_LEVEL_UPDATED,
       });
+
       expect(found?.tags).toEqual([null]);
     },
   })
 );
 
-// Documents the accepted trade-off of the sentinel scheme: the encoding must be idempotent
-// (better-auth's transform pipeline can encode the same value twice), which makes a stored
-// string exactly equal to NULL_MARKER indistinguishable from an encoded null — on writes,
-// reads, and queries alike.
 export const sentinelAmbiguityTestSuite = createTestSuite(
   'AceBase null-marker ambiguity is documented behavior',
   {},
@@ -103,8 +99,6 @@ export const sentinelAmbiguityTestSuite = createTestSuite(
         forceAllowId: true,
       });
 
-      // The row stores the sentinel string, which is exactly what an encoded null
-      // looks like — so querying for null finds it too. Indistinguishable by design.
       const nulls = (await adapter.findMany({
         model: 'user',
         where: [{ field: 'name', value: null, operator: 'eq' }],
